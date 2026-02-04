@@ -84,9 +84,9 @@ const GridCell: React.FC<GridCellProps> = ({
     backgroundColor = 'rgba(144, 238, 144, 0.4)';
   }
 
-  // Hover ile birleştirilmiş arka plan (kaleler için hover yok)
+  // Hover ile birleştirilmiş arka plan (kaleler için hover yok, hedef kaleler hariç)
   let finalBackgroundColor = backgroundColor;
-  if (!isCastle && isHovered) {
+  if ((!isCastle || isTarget) && isHovered) {
     if (isTarget) {
       finalBackgroundColor = 'rgba(255, 107, 107, 0.7)';
     } else if (isAttacker) {
@@ -139,15 +139,19 @@ const GridCell: React.FC<GridCellProps> = ({
     </>
   );
 
+  // Kale tıklanabilirliği: hedef olarak işaretlenmiş kaleler tıklanabilir olmalı
+  const isCastleClickable = isCastle && isTarget;
+  const isDisabled = isCastle && !isTarget;
+
   // Web ve mobil için aynı TouchableOpacity kullan
   return (
     <TouchableOpacity
       onPress={handlePress}
-      activeOpacity={isCastle ? 1 : 0.7}
-      disabled={isCastle}
+      activeOpacity={isDisabled ? 1 : 0.7}
+      disabled={isDisabled}
       // @ts-ignore - web-specific props
-      onMouseEnter={Platform.OS === 'web' && !isCastle ? () => setIsHovered(true) : undefined}
-      onMouseLeave={Platform.OS === 'web' && !isCastle ? () => setIsHovered(false) : undefined}
+      onMouseEnter={Platform.OS === 'web' && !isDisabled ? () => setIsHovered(true) : undefined}
+      onMouseLeave={Platform.OS === 'web' && !isDisabled ? () => setIsHovered(false) : undefined}
       style={[
         styles.cell,
         {
