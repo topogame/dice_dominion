@@ -8,6 +8,7 @@
  * Faz 7: Kale saldırısı, HP azaltma, yenilenme, ele geçirme ve zafer.
  * Faz 8: Bonus sandık sistemi - sandık toplama ve bonus efektleri.
  * Faz 9: Arazi haritaları - Nehir ve Dağ haritaları, köprüler ve geçitler.
+ * Faz 10: İsyancı istilası - AI kontrollü isyancı birimleri.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -105,6 +106,16 @@ interface ChestState {
 
 // Harita türleri
 type MapType = 'flat' | 'river' | 'mountain';
+
+// İsyancı durumu
+interface RebelState {
+  units: { x: number; y: number }[];
+  activeBonuses: ActiveBonus[];
+}
+
+// İsyancı sabitleri
+const REBEL_SPAWN_INTERVAL = 3;  // Her 3 turda bir isyancı spawn olur
+const REBEL_COLOR = PlayerColors.rebel;  // Mor renk
 
 // 4 köşedeki kale pozisyonları
 const CASTLE_POSITIONS = {
@@ -366,6 +377,135 @@ const findTargetEnemies = (grid: GridCellType[][], attackerX: number, attackerY:
 // Zar atma fonksiyonu
 const rollDice = (): number => Math.floor(Math.random() * 6) + 1;
 
+// İsyancı spawn hücresi bul (rastgele boş hücre)
+const findRebelSpawnCell = (grid: GridCellType[][]): { x: number; y: number } | null => {
+  const emptyCells: { x: number; y: number }[] = [];
+
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      const cell = grid[y][x];
+      // Boş, nehir/dağ olmayan, kale olmayan hücre
+      if (cell.type === 'empty' && cell.ownerId === null && !cell.isCastle) {
+        emptyCells.push({ x, y });
+      }
+    }
+  }
+
+  if (emptyCells.length === 0) return null;
+  return emptyCells[Math.floor(Math.random() * emptyCells.length)];
+};
+
+// İsyancı için en yakın oyuncu birimini bul
+const findNearestPlayerUnit = (
+  grid: GridCellType[][],
+  fromX: number,
+  fromY: number
+): { x: number; y: number } | null => {
+  let nearest: { x: number; y: number } | null = null;
+  let minDistance = Infinity;
+
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      const cell = grid[y][x];
+      // Oyuncu birimi veya kalesi (rebel değil)
+      if (cell.ownerId && cell.ownerId !== 'rebel' && (cell.type === 'unit' || cell.type === 'castle')) {
+        const distance = Math.abs(x - fromX) + Math.abs(y - fromY);  // Manhattan mesafesi
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = { x, y };
+        }
+      }
+    }
+  }
+
+  return nearest;
+};
+
+// İsyancı için genişleme yönünü bul (en yakın oyuncu birimine doğru)
+const findRebelExpansionCell = (
+  grid: GridCellType[][],
+  rebelUnits: { x: number; y: number }[]
+): { x: number; y: number } | null => {
+  let bestCell: { x: number; y: number } | null = null;
+  let bestDistance = Infinity;
+
+  for (const unit of rebelUnits) {
+    const adjacentCells = getAdjacentCells(unit.x, unit.y);
+    for (const adj of adjacentCells) {
+      const cell = grid[adj.y][adj.x];
+      // Geçerli yerleştirme hücresi (boş veya sandık, nehir/dağ değil)
+      const isValidType = cell.type === 'empty' || cell.type === 'chest' || cell.type === 'bridge';
+      if (isValidType && cell.ownerId === null) {
+        // En yakın oyuncu birimine olan mesafeyi hesapla
+        const nearestPlayer = findNearestPlayerUnit(grid, adj.x, adj.y);
+        if (nearestPlayer) {
+          const distance = Math.abs(nearestPlayer.x - adj.x) + Math.abs(nearestPlayer.y - adj.y);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestCell = { x: adj.x, y: adj.y };
+          }
+        }
+      }
+    }
+  }
+
+  return bestCell;
+};
+
+// İsyancı için saldırı hedefi bul (komşu oyuncu birimi)
+const findRebelAttackTarget = (
+  grid: GridCellType[][],
+  rebelUnits: { x: number; y: number }[]
+): { attacker: { x: number; y: number }; target: { x: number; y: number } } | null => {
+  const possibleAttacks: { attacker: { x: number; y: number }; target: { x: number; y: number } }[] = [];
+
+  for (const unit of rebelUnits) {
+    const adjacentCells = getAdjacentCells(unit.x, unit.y);
+    for (const adj of adjacentCells) {
+      const cell = grid[adj.y][adj.x];
+      // Oyuncu birimi veya kalesi (rebel değil)
+      if (cell.ownerId && cell.ownerId !== 'rebel' && (cell.type === 'unit' || cell.type === 'castle')) {
+        possibleAttacks.push({ attacker: { x: unit.x, y: unit.y }, target: { x: adj.x, y: adj.y } });
+      }
+    }
+  }
+
+  if (possibleAttacks.length === 0) return null;
+  // Rastgele bir saldırı seç
+  return possibleAttacks[Math.floor(Math.random() * possibleAttacks.length)];
+};
+
+// İsyancı için sandık hedefi bul (2 hücre içinde ulaşılabilir)
+const findRebelChestTarget = (
+  grid: GridCellType[][],
+  rebelUnits: { x: number; y: number }[],
+  chests: ChestState[]
+): { x: number; y: number } | null => {
+  for (const chest of chests) {
+    if (chest.isCollected) continue;
+
+    for (const unit of rebelUnits) {
+      const distance = Math.abs(chest.x - unit.x) + Math.abs(chest.y - unit.y);
+      if (distance <= 2) {
+        // Sandığa doğru genişleme hücresi bul
+        const adjacentCells = getAdjacentCells(unit.x, unit.y);
+        for (const adj of adjacentCells) {
+          const cell = grid[adj.y][adj.x];
+          const isValidType = cell.type === 'empty' || cell.type === 'chest' || cell.type === 'bridge';
+          if (isValidType && cell.ownerId === null) {
+            const newDistance = Math.abs(chest.x - adj.x) + Math.abs(chest.y - adj.y);
+            if (newDistance < distance) {
+              return { x: adj.x, y: adj.y };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -381,6 +521,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Köprü inşa modu (bridge bonusu kullanıldığında)
   const [isBuildingBridge, setIsBuildingBridge] = useState(false);
+
+  // İsyancı durumu
+  const [rebels, setRebels] = useState<RebelState | null>(null);
+  const [rebelSpawnCountdown, setRebelSpawnCountdown] = useState(REBEL_SPAWN_INTERVAL);
+  const [isRebelTurn, setIsRebelTurn] = useState(false);
+  const [rebelCombatLog, setRebelCombatLog] = useState<string | null>(null);
 
   // Oyun durumu
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
@@ -483,6 +629,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setWinner(null);
     setEliminatedPlayer(null);
     setIsBuildingBridge(false);
+    setRebels(null);
+    setRebelSpawnCountdown(REBEL_SPAWN_INTERVAL);
+    setIsRebelTurn(false);
+    setRebelCombatLog(null);
   }, []);
 
   // Oyuncu sayısı değiştiğinde
@@ -750,6 +900,135 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setShowCombatResult(false);
   }, [combat, currentPlayer, selectedOption, turnNumber]);
 
+  // İsyancı turunu çalıştır
+  const executeRebelTurn = useCallback(() => {
+    if (!rebels || rebels.units.length === 0) {
+      setIsRebelTurn(false);
+      setRebelCombatLog(null);
+      return;
+    }
+
+    setIsRebelTurn(true);
+
+    // İsyancı AI mantığı:
+    // 1. Komşu oyuncu birimi varsa saldır
+    // 2. 2 hücre içinde sandık varsa sandığa doğru ilerle
+    // 3. Aksi halde en yakın oyuncu birimine doğru genişle
+
+    // 1. Saldırı kontrolü
+    const attackTarget = findRebelAttackTarget(grid, rebels.units);
+    if (attackTarget) {
+      // Zar savaşı
+      const rebelRoll = rollDice();
+      const defenderCell = grid[attackTarget.target.y][attackTarget.target.x];
+      const defenderId = defenderCell.ownerId;
+      const defender = players.find(p => p.id === defenderId);
+      const defenseBonus = defender?.activeBonuses.find(b => b.type === 'defense') ? 1 : 0;
+      const defenderRoll = rollDice() + defenseBonus;
+
+      if (rebelRoll > defenderRoll) {
+        // İsyancı kazandı
+        setRebelCombatLog(`İsyancı saldırdı! (${rebelRoll} vs ${defenderRoll}) - Kazandı!`);
+
+        // Hedef hücreyi isyancıya çevir
+        setGrid(prevGrid => {
+          const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+          const targetCell = newGrid[attackTarget.target.y][attackTarget.target.x];
+
+          // Kale saldırısı mı kontrol et
+          if (targetCell.isCastle && defenderId) {
+            // Kale HP'sini azalt
+            setPlayers(prevPlayers => prevPlayers.map(p => {
+              if (p.id === defenderId) {
+                const newHP = p.hp - 1;
+                return { ...p, hp: newHP, isAlive: newHP > 0 };
+              }
+              return p;
+            }));
+          } else {
+            // Normal birim - isyancıya çevir
+            targetCell.ownerId = 'rebel';
+            targetCell.type = 'unit';
+            setRebels(prev => prev ? {
+              ...prev,
+              units: [...prev.units, { x: attackTarget.target.x, y: attackTarget.target.y }]
+            } : null);
+          }
+
+          return newGrid;
+        });
+      } else {
+        // İsyancı kaybetti
+        setRebelCombatLog(`İsyancı saldırdı! (${rebelRoll} vs ${defenderRoll}) - Kaybetti!`);
+
+        // Saldıran isyancı birimini kaldır
+        setGrid(prevGrid => {
+          const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+          const attackerCell = newGrid[attackTarget.attacker.y][attackTarget.attacker.x];
+          attackerCell.ownerId = null;
+          attackerCell.type = 'empty';
+          return newGrid;
+        });
+
+        setRebels(prev => prev ? {
+          ...prev,
+          units: prev.units.filter(u => u.x !== attackTarget.attacker.x || u.y !== attackTarget.attacker.y)
+        } : null);
+      }
+    } else {
+      // 2. Sandık kontrolü
+      let expansionCell = findRebelChestTarget(grid, rebels.units, chests);
+
+      // 3. Genişleme (sandık yoksa en yakın oyuncuya doğru)
+      if (!expansionCell) {
+        expansionCell = findRebelExpansionCell(grid, rebels.units);
+      }
+
+      if (expansionCell) {
+        const cellAtExpansion = grid[expansionCell.y][expansionCell.x];
+
+        // Sandık toplama kontrolü
+        if (cellAtExpansion.type === 'chest') {
+          const chest = chests.find(c => c.x === expansionCell!.x && c.y === expansionCell!.y && !c.isCollected);
+          if (chest) {
+            setChests(prevChests => prevChests.map(c =>
+              c.x === expansionCell!.x && c.y === expansionCell!.y ? { ...c, isCollected: true } : c
+            ));
+            // İsyancıya bonus ekle
+            setRebels(prev => prev ? {
+              ...prev,
+              activeBonuses: [...prev.activeBonuses, { type: chest.bonusType, turnsRemaining: 2, usesRemaining: chest.bonusType === 'bridge' ? 2 : undefined }]
+            } : null);
+            setRebelCombatLog(`İsyancı sandık topladı! (${getBonusInfo(chest.bonusType).name})`);
+          }
+        } else {
+          setRebelCombatLog(`İsyancı genişledi.`);
+        }
+
+        // Genişleme hücresini isyancıya çevir
+        setGrid(prevGrid => {
+          const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+          newGrid[expansionCell!.y][expansionCell!.x].ownerId = 'rebel';
+          newGrid[expansionCell!.y][expansionCell!.x].type = 'unit';
+          return newGrid;
+        });
+
+        setRebels(prev => prev ? {
+          ...prev,
+          units: [...prev.units, { x: expansionCell!.x, y: expansionCell!.y }]
+        } : null);
+      } else {
+        setRebelCombatLog(`İsyancı hareket edemedi.`);
+      }
+    }
+
+    // İsyancı turu 1.5 saniye sonra biter
+    setTimeout(() => {
+      setIsRebelTurn(false);
+      setRebelCombatLog(null);
+    }, 1500);
+  }, [rebels, grid, players, chests]);
+
   // Turu bitir
   const handleEndTurn = useCallback(() => {
     // Bonus sürelerini azalt (sadece mevcut oyuncu için)
@@ -774,6 +1053,16 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         return updatedPlayer;
       });
     });
+
+    // İsyancı bonuslarını azalt
+    if (rebels) {
+      setRebels(prev => prev ? {
+        ...prev,
+        activeBonuses: prev.activeBonuses
+          .map(b => ({ ...b, turnsRemaining: b.turnsRemaining - 1 }))
+          .filter(b => b.turnsRemaining > 0)
+      } : null);
+    }
 
     // Tur 10'dan sonra, tüm sandıklar toplandıysa yeni sandık spawn et
     const allChestsCollected = chests.every(c => c.isCollected);
@@ -821,19 +1110,66 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
     setCurrentTurnIndex(nextIndex);
 
+    // Tur sayısını güncelle (herkes oynadıysa)
+    let newTurnNumber = turnNumber;
     if (nextIndex === 0) {
-      setTurnNumber(prev => prev + 1);
+      newTurnNumber = turnNumber + 1;
+      setTurnNumber(newTurnNumber);
+
+      // İsyancı spawn sayacını güncelle
+      const newCountdown = rebelSpawnCountdown - 1;
+      if (newCountdown <= 0) {
+        // İsyancı spawn et
+        const spawnCell = findRebelSpawnCell(grid);
+        if (spawnCell) {
+          setGrid(prevGrid => {
+            const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+            newGrid[spawnCell.y][spawnCell.x].ownerId = 'rebel';
+            newGrid[spawnCell.y][spawnCell.x].type = 'unit';
+            return newGrid;
+          });
+
+          if (rebels) {
+            // Mevcut isyancılara ekle
+            setRebels(prev => prev ? {
+              ...prev,
+              units: [...prev.units, { x: spawnCell.x, y: spawnCell.y }]
+            } : null);
+          } else {
+            // Yeni isyancı oluştur
+            setRebels({
+              units: [{ x: spawnCell.x, y: spawnCell.y }],
+              activeBonuses: [],
+            });
+          }
+
+          setRebelCombatLog(`Yeni isyancı belirdi! (${spawnCell.x}, ${spawnCell.y})`);
+        }
+
+        // Sayacı sıfırla
+        setRebelSpawnCountdown(REBEL_SPAWN_INTERVAL);
+      } else {
+        setRebelSpawnCountdown(newCountdown);
+      }
     }
 
     // Elenen oyuncu bildirimini temizle
     setEliminatedPlayer(null);
+
+    // İsyancı turu (varsa)
+    if (rebels && rebels.units.length > 0 && nextIndex === 0) {
+      // Bir sonraki tur başlamadan önce isyancı turunu çalıştır
+      setTimeout(() => {
+        executeRebelTurn();
+      }, 500);
+    }
 
     setGamePhase('selectOption');
     setSelectedOption(null);
     setDiceResult(null);
     setRemainingPlacements(0);
     setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
-  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer]);
+  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer, rebels, rebelSpawnCountdown, executeRebelTurn]);
 
   // Köprü inşa etmeyi başlat
   const handleStartBuildBridge = useCallback(() => {
@@ -1303,6 +1639,49 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     </View>
   );
 
+  // İsyancı sayacı ve durumu
+  const renderRebelInfo = () => {
+    // Setup ve turnOrderRoll fazlarında gösterme
+    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'gameOver') return null;
+
+    const rebelUnitCount = rebels?.units.length || 0;
+
+    return (
+      <View style={styles.rebelInfoContainer}>
+        {/* Spawn sayacı */}
+        <View style={styles.rebelCountdownContainer}>
+          <Text style={styles.rebelCountdownIcon}>👿</Text>
+          <Text style={styles.rebelCountdownText}>
+            İsyancı: {rebelSpawnCountdown} tur
+          </Text>
+        </View>
+
+        {/* İsyancı birim sayısı (varsa) */}
+        {rebelUnitCount > 0 && (
+          <View style={styles.rebelUnitCountContainer}>
+            <View style={[styles.rebelColorDot, { backgroundColor: REBEL_COLOR }]} />
+            <Text style={styles.rebelUnitCountText}>{rebelUnitCount} birim</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // İsyancı turu göstergesi
+  const renderRebelTurnIndicator = () => {
+    if (!isRebelTurn) return null;
+
+    return (
+      <View style={styles.rebelTurnContainer}>
+        <Text style={styles.rebelTurnIcon}>👿</Text>
+        <Text style={styles.rebelTurnText}>İSYANCI TURU</Text>
+        {rebelCombatLog && (
+          <Text style={styles.rebelCombatLog}>{rebelCombatLog}</Text>
+        )}
+      </View>
+    );
+  };
+
   // Grid içeriği
   const renderGridContent = () => (
     <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
@@ -1349,8 +1728,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         {renderGameOver()}
         {renderEliminatedNotification()}
         {renderBonusCollectedNotification()}
+        {renderRebelTurnIndicator()}
         {renderGameControls()}
         {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+        {renderRebelInfo()}
         {renderActiveBonuses()}
         <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           {renderGridContent()}
@@ -1387,8 +1768,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       {renderGameOver()}
       {renderEliminatedNotification()}
       {renderBonusCollectedNotification()}
+      {renderRebelTurnIndicator()}
       {renderGameControls()}
       {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+      {renderRebelInfo()}
       {renderActiveBonuses()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
@@ -1499,6 +1882,18 @@ const styles = StyleSheet.create({
   buildingBridgeText: { color: '#8B7355', fontSize: 11, fontWeight: '600' },
   cancelBuildButton: { backgroundColor: '#666', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   cancelBuildButtonText: { color: '#fff', fontSize: 10 },
+  // İsyancı stilleri
+  rebelInfoContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 16 },
+  rebelCountdownContainer: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(139, 74, 139, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#8B4A8B' },
+  rebelCountdownIcon: { fontSize: 16 },
+  rebelCountdownText: { color: '#8B4A8B', fontSize: 11, fontWeight: '600' },
+  rebelUnitCountContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rebelColorDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#fff' },
+  rebelUnitCountText: { color: '#8B4A8B', fontSize: 11, fontWeight: '600' },
+  rebelTurnContainer: { backgroundColor: 'rgba(139, 74, 139, 0.4)', padding: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: '#8B4A8B' },
+  rebelTurnIcon: { fontSize: 28 },
+  rebelTurnText: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 },
+  rebelCombatLog: { color: '#ddd', fontSize: 12, marginTop: 6, textAlign: 'center' },
 });
 
 export default GridBoard;
