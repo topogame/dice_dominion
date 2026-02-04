@@ -3,6 +3,7 @@
  *
  * Bu dosya tek bir ızgara hücresini render eder.
  * Hücre tıklanabilir ve farklı durumları görsel olarak gösterir.
+ * Faz 3: Kale hücreleri kalın kenarlıkla gösterilir.
  */
 
 import React, { memo, useCallback, useState } from 'react';
@@ -17,6 +18,8 @@ interface GridCellProps {
   type: CellType;
   ownerId: string | null;
   ownerColor: string | null;
+  isCastle?: boolean;
+  castleHP?: number | null;
   isHighlighted: boolean;
   onPress: (x: number, y: number) => void;
 }
@@ -47,6 +50,8 @@ const GridCell: React.FC<GridCellProps> = ({
   type,
   ownerId,
   ownerColor,
+  isCastle = false,
+  castleHP = null,
   isHighlighted,
   onPress,
 }) => {
@@ -62,10 +67,18 @@ const GridCell: React.FC<GridCellProps> = ({
   // Arka plan rengi
   const backgroundColor = getCellBackgroundColor(type, ownerColor);
 
-  // Hover ile birleştirilmiş arka plan
-  const finalBackgroundColor = isHovered
+  // Hover ile birleştirilmiş arka plan (kaleler için hover yok)
+  const finalBackgroundColor = !isCastle && isHovered
     ? adjustColorBrightness(backgroundColor, 0.8)
     : backgroundColor;
+
+  // Kale için kalın kenarlık
+  const borderWidth = isCastle ? 3 : 1;
+  const borderColor = isCastle
+    ? '#ffffff'
+    : isHighlighted
+    ? GameColors.highlight
+    : GameColors.gridBorder;
 
   // Hücre içeriği
   const cellContent = (
@@ -78,11 +91,11 @@ const GridCell: React.FC<GridCellProps> = ({
         </View>
       )}
 
-      {/* Kale göstergesi */}
-      {type === 'castle' && (
+      {/* Kale göstergesi (kule ikonu) */}
+      {isCastle && (
         <View style={styles.castleMarker}>
           <View style={styles.castleTower} />
-          <View style={styles.castleTower} />
+          <View style={[styles.castleTower, styles.castleTowerMiddle]} />
           <View style={styles.castleTower} />
         </View>
       )}
@@ -98,18 +111,21 @@ const GridCell: React.FC<GridCellProps> = ({
   return (
     <TouchableOpacity
       onPress={handlePress}
-      activeOpacity={0.7}
+      activeOpacity={isCastle ? 1 : 0.7}
+      disabled={isCastle}
       // @ts-ignore - web-specific props
-      onMouseEnter={Platform.OS === 'web' ? () => setIsHovered(true) : undefined}
-      onMouseLeave={Platform.OS === 'web' ? () => setIsHovered(false) : undefined}
+      onMouseEnter={Platform.OS === 'web' && !isCastle ? () => setIsHovered(true) : undefined}
+      onMouseLeave={Platform.OS === 'web' && !isCastle ? () => setIsHovered(false) : undefined}
       style={[
         styles.cell,
         {
           width: size,
           height: size,
           backgroundColor: finalBackgroundColor,
+          borderWidth,
+          borderColor,
         },
-        isHighlighted && styles.highlighted,
+        isHighlighted && !isCastle && styles.highlighted,
       ]}
     >
       {cellContent}
@@ -136,8 +152,6 @@ function adjustColorBrightness(color: string, factor: number): string {
 
 const styles = StyleSheet.create({
   cell: {
-    borderWidth: 1,
-    borderColor: GameColors.gridBorder,
     justifyContent: 'center',
     alignItems: 'center',
     // @ts-ignore - web style
@@ -176,10 +190,13 @@ const styles = StyleSheet.create({
   },
   castleTower: {
     width: '25%',
-    height: '100%',
+    height: '70%',
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
+  },
+  castleTowerMiddle: {
+    height: '100%',
   },
   chestMarker: {
     width: '50%',
