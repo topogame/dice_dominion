@@ -40,19 +40,40 @@ jobs:
       - name: Build web export
         run: npx expo export --platform web
 
-      - name: Fix asset paths for GitHub Pages subdirectory
+      - name: Fix all asset paths for GitHub Pages
         run: |
-          # Fix JS/CSS paths in all HTML files (change /_expo to ./_expo)
-          find dist -name "*.html" -exec sed -i 's|"/_expo|"./_expo|g' {} \;
-          find dist -name "*.html" -exec sed -i "s|'/_expo|'./_expo|g" {} \;
-          # Fix favicon path
-          find dist -name "*.html" -exec sed -i 's|"/favicon|"./favicon|g' {} \;
+          echo "Fixing asset paths..."
+
+          # Fix paths in HTML files
+          for file in dist/*.html dist/**/*.html 2>/dev/null; do
+            if [ -f "$file" ]; then
+              # Change absolute paths to relative
+              sed -i 's|"/_expo|"./_expo|g' "$file"
+              sed -i "s|'/_expo|'./_expo|g" "$file"
+              sed -i 's|"/assets|"./assets|g' "$file"
+              sed -i "s|'/assets|'./assets|g" "$file"
+              sed -i 's|"/favicon|"./favicon|g' "$file"
+              echo "Fixed: $file"
+            fi
+          done
+
+          # Fix paths in JS files
+          for file in dist/_expo/static/js/web/*.js; do
+            if [ -f "$file" ]; then
+              sed -i 's|"/assets/|"./assets/|g' "$file"
+              sed -i 's|"/favicon|"./favicon|g' "$file"
+              echo "Fixed JS: $file"
+            fi
+          done
+
           # Create game folder for clean URLs
           mkdir -p dist/game
           cp dist/game.html dist/game/index.html
+
           # Copy 404.html for fallback
           cp dist/index.html dist/404.html
-          echo "Fixed paths in HTML files"
+
+          echo "All paths fixed!"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

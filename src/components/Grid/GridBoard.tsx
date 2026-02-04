@@ -10,6 +10,7 @@ import {
   StyleSheet,
   View,
   Dimensions,
+  ScrollView,
   Platform,
 } from 'react-native';
 import {
@@ -85,8 +86,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Test için: Hücreye tıklandığında rengini değiştir
   const handleCellPress = useCallback((x: number, y: number) => {
-    console.log(`GridBoard: Cell pressed at (${x}, ${y})`);
-
     // Izgara durumunu güncelle
     setGrid((prevGrid) => {
       const newGrid = prevGrid.map((row) => row.map((cell) => ({ ...cell })));
@@ -130,49 +129,52 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }
   };
 
-  // Web için native HTML render
+  // Grid içeriği
+  const renderGridContent = () => (
+    <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
+      {grid.map((row, y) => (
+        <View key={`row-${y}`} style={styles.row}>
+          {row.map((cell, x) => (
+            <GridCell
+              key={`cell-${x}-${y}`}
+              x={x}
+              y={y}
+              size={cellSize}
+              type={cell.type}
+              ownerId={cell.ownerId}
+              ownerColor={getOwnerColor(cell.ownerId)}
+              isHighlighted={
+                highlightedCell?.x === x && highlightedCell?.y === y
+              }
+              onPress={handleCellPress}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+
+  // Web için ScrollView
   if (Platform.OS === 'web') {
     return (
-      <div style={{
-        flex: 1,
-        backgroundColor: '#1a1a2e',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 10,
-        overflow: 'auto',
-      }}>
-        <div style={{
-          backgroundColor: GameColors.grid,
-          border: `2px solid ${GameColors.gridBorder}`,
-          borderRadius: 4,
-        }}>
-          {grid.map((row, y) => (
-            <div key={`row-${y}`} style={{ display: 'flex', flexDirection: 'row' }}>
-              {row.map((cell, x) => (
-                <GridCell
-                  key={`cell-${x}-${y}`}
-                  x={x}
-                  y={y}
-                  size={cellSize}
-                  type={cell.type}
-                  ownerId={cell.ownerId}
-                  ownerColor={getOwnerColor(cell.ownerId)}
-                  isHighlighted={
-                    highlightedCell?.x === x && highlightedCell?.y === y
-                  }
-                  onPress={handleCellPress}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      <View style={styles.container}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          contentContainerStyle={styles.scrollContent}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator
+            contentContainerStyle={styles.scrollContent}
+          >
+            {renderGridContent()}
+          </ScrollView>
+        </ScrollView>
+      </View>
     );
   }
 
-  // Mobil için React Native render
-  // Pinch (yakınlaştırma) gesture
+  // Mobil için gesture desteği
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
       savedScale.value = scale.value;
@@ -187,7 +189,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       }
     });
 
-  // Pan (kaydırma) gesture
   const panGesture = Gesture.Pan()
     .onStart(() => {
       savedTranslateX.value = translateX.value;
@@ -228,27 +229,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     <GestureHandlerRootView style={styles.container}>
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
-          <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-            {grid.map((row, y) => (
-              <View key={`row-${y}`} style={styles.row}>
-                {row.map((cell, x) => (
-                  <GridCell
-                    key={`cell-${x}-${y}`}
-                    x={x}
-                    y={y}
-                    size={cellSize}
-                    type={cell.type}
-                    ownerId={cell.ownerId}
-                    ownerColor={getOwnerColor(cell.ownerId)}
-                    isHighlighted={
-                      highlightedCell?.x === x && highlightedCell?.y === y
-                    }
-                    onPress={handleCellPress}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
+          {renderGridContent()}
         </Animated.View>
       </GestureDetector>
     </GestureHandlerRootView>
@@ -261,6 +242,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
   },
   gridContainer: {
     justifyContent: 'center',
