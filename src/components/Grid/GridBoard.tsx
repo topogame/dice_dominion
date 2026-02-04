@@ -1847,21 +1847,28 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        {renderPlayerCountSelector()}
-        {renderTurnOrderRoll()}
-        {renderOptionMenu()}
+        {/* Grid fills entire screen as background */}
+        <View style={styles.gridContainer}>
+          {renderGridContent()}
+        </View>
+
+        {/* All controls float on top of grid */}
+        <View style={styles.floatingControlsTop}>
+          {renderPlayerCountSelector()}
+          {renderTurnOrderRoll()}
+          {renderOptionMenu()}
+          {renderGameControls()}
+          {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+          {renderRebelInfo()}
+          {renderActiveBonuses()}
+        </View>
+
+        {/* Overlays that need full screen */}
         {renderGameOver()}
         {renderEliminatedNotification()}
         {renderBonusCollectedNotification()}
         {renderRebelTurnIndicator()}
         {renderTimerWarning()}
-        {renderGameControls()}
-        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
-        {renderRebelInfo()}
-        {renderActiveBonuses()}
-        <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          {renderGridContent()}
-        </View>
       </View>
     );
   }
@@ -1893,30 +1900,39 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {renderPlayerCountSelector()}
-      {renderTurnOrderRoll()}
-      {renderOptionMenu()}
-      {renderGameOver()}
-      {renderEliminatedNotification()}
-      {renderBonusCollectedNotification()}
-      {renderRebelTurnIndicator()}
-      {renderTimerWarning()}
-      {renderGameControls()}
-      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
-      {renderRebelInfo()}
-      {renderActiveBonuses()}
+      {/* Grid fills entire screen as background */}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
         </Animated.View>
       </GestureDetector>
+
+      {/* All controls float on top of grid */}
+      <View style={styles.floatingControlsTop}>
+        {renderPlayerCountSelector()}
+        {renderTurnOrderRoll()}
+        {renderOptionMenu()}
+        {renderGameControls()}
+        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+        {renderRebelInfo()}
+        {renderActiveBonuses()}
+      </View>
+
+      {/* Overlays that need full screen */}
+      {renderGameOver()}
+      {renderEliminatedNotification()}
+      {renderBonusCollectedNotification()}
+      {renderRebelTurnIndicator()}
+      {renderTimerWarning()}
     </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a2e' },
-  selectorContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#2a2a4a', flexWrap: 'wrap', gap: 8 },
+  // Floating controls container at top
+  floatingControlsTop: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
+  selectorContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: 'rgba(42, 42, 74, 0.9)', flexWrap: 'wrap', gap: 8 },
   selectorLabel: { color: '#f0f0f5', fontSize: 12, marginRight: 6 },
   selectorButtons: { flexDirection: 'row', gap: 4 },
   selectorButton: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 4, backgroundColor: '#3a3a5a' },
@@ -1925,7 +1941,7 @@ const styles = StyleSheet.create({
   selectorButtonTextActive: { color: '#fff' },
   startButton: { backgroundColor: '#4AD97A', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 6 },
   startButtonText: { color: '#1a1a2e', fontSize: 12, fontWeight: '700' },
-  turnOrderContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  turnOrderContainer: { backgroundColor: 'rgba(37, 37, 64, 0.95)', padding: 12, alignItems: 'center' },
   turnOrderTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8 },
   rollResults: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 12 },
   rollResultItem: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#3a3a5a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
@@ -1936,7 +1952,7 @@ const styles = StyleSheet.create({
   diceDisplayLarge: { backgroundColor: '#3a3a5a', width: 50, height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   diceNumberLarge: { color: '#fff', fontSize: 28, fontWeight: '900' },
   turnOrderResultTitle: { color: '#90EE90', fontSize: 14, fontWeight: '700', marginTop: 8 },
-  optionMenuContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  optionMenuContainer: { backgroundColor: 'rgba(37, 37, 64, 0.95)', padding: 12, alignItems: 'center' },
   optionPlayerIndicator: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   optionPlayerColor: { width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: '#fff' },
   optionMenuTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
@@ -1945,7 +1961,7 @@ const styles = StyleSheet.create({
   optionButtonDisabled: { backgroundColor: '#3a3a5a', opacity: 0.5 },
   optionButtonLabel: { color: '#fff', fontSize: 20, fontWeight: '900' },
   optionButtonDesc: { color: '#ddd', fontSize: 10, marginTop: 2 },
-  combatUIContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  combatUIContainer: { backgroundColor: 'rgba(37, 37, 64, 0.95)', padding: 12, alignItems: 'center' },
   combatUIText: { color: '#fff', fontSize: 14, marginBottom: 8 },
   cancelButton: { backgroundColor: '#666', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 6 },
   cancelButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
@@ -1960,7 +1976,7 @@ const styles = StyleSheet.create({
   combatLose: { color: '#FF6B6B' },
   continueButton: { backgroundColor: '#4AD97A', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 6, marginTop: 8 },
   continueButtonText: { color: '#1a1a2e', fontSize: 14, fontWeight: '700' },
-  controlsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#252540' },
+  controlsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: 'rgba(37, 37, 64, 0.9)' },
   turnInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   turnNumber: { color: '#888', fontSize: 11, fontWeight: '600' },
   currentPlayerInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -1976,12 +1992,12 @@ const styles = StyleSheet.create({
   placementText: { color: '#90EE90', fontSize: 12, fontWeight: '600' },
   endTurnButton: { backgroundColor: '#4AD97A', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
   endTurnButtonText: { color: '#1a1a2e', fontSize: 12, fontWeight: '700' },
-  hpContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 10 },
+  hpContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: 'rgba(31, 31, 53, 0.9)', gap: 10 },
   hpItem: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   hpItemActive: { backgroundColor: 'rgba(144, 238, 144, 0.2)', borderWidth: 1, borderColor: '#90EE90' },
   hpColorDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
   hpText: { fontSize: 10 },
-  gridContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  gridContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 1 },
   // Görsel Faz V1: Arazi dokuları görünür olması için arka plan kaldırıldı
   grid: { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(58, 58, 90, 0.5)', borderRadius: 4 },
   row: { flexDirection: 'row' },
@@ -2006,7 +2022,7 @@ const styles = StyleSheet.create({
   bonusCollectedText: { color: '#FFD700', fontSize: 14, fontWeight: '700' },
   bonusCollectedDesc: { color: '#ddd', fontSize: 11 },
   // Aktif bonuslar stili
-  activeBonusesContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 8 },
+  activeBonusesContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: 'rgba(31, 31, 53, 0.9)', gap: 8 },
   activeBonusItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 215, 0, 0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700', gap: 6 },
   activeBonusIcon: { fontSize: 18 },
   activeBonusInfo: { alignItems: 'flex-start' },
@@ -2020,7 +2036,7 @@ const styles = StyleSheet.create({
   cancelBuildButton: { backgroundColor: '#666', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   cancelBuildButtonText: { color: '#fff', fontSize: 10 },
   // İsyancı stilleri
-  rebelInfoContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 16 },
+  rebelInfoContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: 'rgba(31, 31, 53, 0.9)', gap: 16 },
   rebelCountdownContainer: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(139, 74, 139, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#8B4A8B' },
   rebelCountdownIcon: { fontSize: 16 },
   rebelCountdownText: { color: '#8B4A8B', fontSize: 11, fontWeight: '600' },
