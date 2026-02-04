@@ -87,9 +87,15 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
 }) => {
   // Harita boyutları
   const mapDimensions = useMemo(() => getIsoMapDimensions(), []);
+  // Merkez offset'i harita boyutlarına göre hesapla (ekran değil)
+  const containerWidth = mapDimensions.width + 100;
+  const containerHeight = mapDimensions.height + 150;
   const centerOffset = useMemo(
-    () => getIsoCenterOffset(SCREEN_WIDTH, SCREEN_HEIGHT),
-    []
+    () => ({
+      offsetX: containerWidth / 2,
+      offsetY: 50, // Üstten biraz boşluk
+    }),
+    [containerWidth]
   );
 
   // Hücreleri derinliğe göre sırala (painter's algorithm)
@@ -341,8 +347,10 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
       </Svg>
 
       {/* Izometrik ızgara */}
-      <View style={[styles.gridContainer, { width: mapDimensions.width + 100, height: mapDimensions.height + 100 }]}>
-        {sortedCells.map(({ x, y, cell }) => renderIsoTile(x, y, cell))}
+      <View style={styles.gridWrapper}>
+        <View style={[styles.gridContainer, { width: mapDimensions.width + 100, height: mapDimensions.height + 150 }]}>
+          {sortedCells.map(({ x, y, cell }) => renderIsoTile(x, y, cell))}
+        </View>
       </View>
 
       {/* Vinyet efekti */}
@@ -364,6 +372,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  gridWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   gridContainer: {
     position: 'relative',
