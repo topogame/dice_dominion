@@ -21,6 +21,7 @@ interface GridCellProps {
   isCastle?: boolean;
   castleHP?: number | null;
   isHighlighted: boolean;
+  isValidPlacement?: boolean;  // Geçerli yerleştirme hücresi mi?
   onPress: (x: number, y: number) => void;
 }
 
@@ -53,6 +54,7 @@ const GridCell: React.FC<GridCellProps> = ({
   isCastle = false,
   castleHP = null,
   isHighlighted,
+  isValidPlacement = false,
   onPress,
 }) => {
   // Hover durumu (web için)
@@ -60,22 +62,30 @@ const GridCell: React.FC<GridCellProps> = ({
 
   // Hücre tıklandığında
   const handlePress = useCallback(() => {
-    console.log(`Cell pressed: ${x}, ${y}`);
     onPress(x, y);
   }, [x, y, onPress]);
 
   // Arka plan rengi
-  const backgroundColor = getCellBackgroundColor(type, ownerColor);
+  let backgroundColor = getCellBackgroundColor(type, ownerColor);
+
+  // Geçerli yerleştirme hücresi için yeşil arka plan
+  if (isValidPlacement) {
+    backgroundColor = 'rgba(144, 238, 144, 0.4)';
+  }
 
   // Hover ile birleştirilmiş arka plan (kaleler için hover yok)
-  const finalBackgroundColor = !isCastle && isHovered
+  const finalBackgroundColor = !isCastle && isHovered && isValidPlacement
+    ? 'rgba(144, 238, 144, 0.6)'
+    : !isCastle && isHovered
     ? adjustColorBrightness(backgroundColor, 0.8)
     : backgroundColor;
 
-  // Kale için kalın kenarlık
-  const borderWidth = isCastle ? 3 : 1;
+  // Kale için kalın kenarlık, geçerli yerleştirme için yeşil kenarlık
+  const borderWidth = isCastle ? 3 : isValidPlacement ? 2 : 1;
   const borderColor = isCastle
     ? '#ffffff'
+    : isValidPlacement
+    ? GameColors.highlight
     : isHighlighted
     ? GameColors.highlight
     : GameColors.gridBorder;
