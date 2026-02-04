@@ -604,12 +604,14 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const gridTotalWidth = isoMapDimensions.width + 100;  // Ekstra padding
   const gridTotalHeight = isoMapDimensions.height + 150;  // Ekstra padding
 
-  // Calculate initial scale to fill entire screen with tiles
+  // Calculate initial scale to fill entire screen edge-to-edge with tiles
   const initialScale = useMemo(() => {
-    const scaleX = screenWidth / gridTotalWidth;
-    const scaleY = screenHeight / gridTotalHeight;
-    // Use larger scale to fill screen with tiles
-    return Math.max(scaleX, scaleY, 0.6);
+    // Scale large enough so the narrower dimension overflows the screen
+    // This ensures NO background is visible - tiles cover every pixel
+    const scaleX = (screenWidth * 1.4) / gridTotalWidth;
+    const scaleY = (screenHeight * 1.4) / gridTotalHeight;
+    // Use the larger scale to ensure full coverage on both axes
+    return Math.max(scaleX, scaleY, 1.2);
   }, [gridTotalWidth, gridTotalHeight]);
 
   // Zoom ve pan için animated değerler (start with calculated initial scale)

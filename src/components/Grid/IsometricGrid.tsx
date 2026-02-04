@@ -14,7 +14,7 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { StyleSheet, View, Dimensions, TouchableOpacity } from 'react-native';
-import Svg, { Polygon, Rect, Defs, RadialGradient, Stop, ClipPath, Image as SvgImage } from 'react-native-svg';
+import Svg, { Polygon, Defs, ClipPath, Image as SvgImage } from 'react-native-svg';
 import {
   gridToIso,
   isoToGrid,
@@ -349,23 +349,12 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Isometric grid fills entire screen */}
+      {/* Isometric grid fills entire screen - no vignette, immersive view */}
       <View style={styles.gridWrapper}>
         <View style={[styles.gridContainer, { width: mapDimensions.width + 100, height: mapDimensions.height + 150 }]}>
           {sortedCells.map(({ x, y, cell }) => renderIsoTile(x, y, cell))}
         </View>
       </View>
-
-      {/* Subtle vignette effect at edges */}
-      <Svg style={styles.vignetteOverlay} width="100%" height="100%">
-        <Defs>
-          <RadialGradient id="vignette" cx="50%" cy="50%" r="70%">
-            <Stop offset="70%" stopColor="transparent" />
-            <Stop offset="100%" stopColor="rgba(0,0,0,0.3)" />
-          </RadialGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#vignette)" />
-      </Svg>
     </View>
   );
 };
@@ -373,7 +362,7 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: TerrainColors.grass.dark, // Dark grass color for edges
+    backgroundColor: '#3d5c28', // Match grass tile color for seamless edges
   },
   gridWrapper: {
     flex: 1,
@@ -382,14 +371,6 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     position: 'relative',
-  },
-  vignetteOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    pointerEvents: 'none',
   },
   tile: {
     position: 'absolute',
