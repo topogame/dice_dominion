@@ -7,6 +7,7 @@
  * Faz 6: Savaş sistemi - Seçenek A/B/C ve zar savaşları.
  * Faz 7: Kale saldırısı, HP azaltma, yenilenme, ele geçirme ve zafer.
  * Faz 8: Bonus sandık sistemi - sandık toplama ve bonus efektleri.
+ * Faz 9: Arazi haritaları - Nehir ve Dağ haritaları, köprüler ve geçitler.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -102,6 +103,9 @@ interface ChestState {
   isCollected: boolean;
 }
 
+// Harita türleri
+type MapType = 'flat' | 'river' | 'mountain';
+
 // 4 köşedeki kale pozisyonları
 const CASTLE_POSITIONS = {
   topLeft: { x: 0, y: 0 },
@@ -196,8 +200,58 @@ const createInitialChests = (playerCount: number): ChestState[] => {
   return chests;
 };
 
+// Nehir haritası için nehir ve köprü hücrelerini oluştur
+const createRiverTerrain = (grid: GridCellType[][]): void => {
+  const centerX = Math.floor(GRID_WIDTH / 2);
+
+  // Nehir: merkez sütunlarında dikey çizgi (2 hücre genişliğinde)
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    grid[y][centerX - 1].type = 'river';
+    grid[y][centerX].type = 'river';
+  }
+
+  // Köprüler: 2x2 kare, nehir üzerinde (üst ve alt bölgede)
+  // Üst köprü (y=2-3)
+  grid[2][centerX - 1].type = 'bridge';
+  grid[2][centerX].type = 'bridge';
+  grid[3][centerX - 1].type = 'bridge';
+  grid[3][centerX].type = 'bridge';
+
+  // Alt köprü (y=8-9)
+  grid[8][centerX - 1].type = 'bridge';
+  grid[8][centerX].type = 'bridge';
+  grid[9][centerX - 1].type = 'bridge';
+  grid[9][centerX].type = 'bridge';
+};
+
+// Dağ haritası için dağ ve geçit hücrelerini oluştur
+const createMountainTerrain = (grid: GridCellType[][]): void => {
+  const centerX = Math.floor(GRID_WIDTH / 2);
+
+  // Dağlar: merkez sütunlarında dikey çizgi (3 hücre genişliğinde)
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    grid[y][centerX - 2].type = 'mountain';
+    grid[y][centerX - 1].type = 'mountain';
+    grid[y][centerX].type = 'mountain';
+    grid[y][centerX + 1].type = 'mountain';
+  }
+
+  // Dar geçitler: 2 hücre genişliğinde koridorlar (üst ve alt bölgede)
+  // Üst geçit (y=2-3, x=centerX-1, centerX)
+  grid[2][centerX - 1].type = 'empty';
+  grid[2][centerX].type = 'empty';
+  grid[3][centerX - 1].type = 'empty';
+  grid[3][centerX].type = 'empty';
+
+  // Alt geçit (y=8-9, x=centerX-1, centerX)
+  grid[8][centerX - 1].type = 'empty';
+  grid[8][centerX].type = 'empty';
+  grid[9][centerX - 1].type = 'empty';
+  grid[9][centerX].type = 'empty';
+};
+
 // Oyuncularla birlikte ızgara oluştur
-const createInitialGrid = (players: PlayerInfo[], chests: ChestState[]): GridCellType[][] => {
+const createInitialGrid = (players: PlayerInfo[], chests: ChestState[], mapType: MapType): GridCellType[][] => {
   const grid: GridCellType[][] = [];
 
   for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -206,6 +260,13 @@ const createInitialGrid = (players: PlayerInfo[], chests: ChestState[]): GridCel
       row.push({ x, y, type: 'empty', ownerId: null, isCastle: false });
     }
     grid.push(row);
+  }
+
+  // Arazi türüne göre nehir/dağ ekle
+  if (mapType === 'river') {
+    createRiverTerrain(grid);
+  } else if (mapType === 'mountain') {
+    createMountainTerrain(grid);
   }
 
   // Kaleleri yerleştir
@@ -222,10 +283,13 @@ const createInitialGrid = (players: PlayerInfo[], chests: ChestState[]): GridCel
     }
   });
 
-  // Sandıkları yerleştir
+  // Sandıkları yerleştir (nehir/dağ üzerine yerleşmemeye dikkat et)
   chests.forEach((chest) => {
     if (!chest.isCollected) {
-      grid[chest.y][chest.x].type = 'chest';
+      const cell = grid[chest.y][chest.x];
+      if (cell.type === 'empty') {
+        cell.type = 'chest';
+      }
     }
   });
 
@@ -252,8 +316,10 @@ const findValidPlacementCells = (grid: GridCellType[][], playerId: string): Set<
         const adjacentCells = getAdjacentCells(x, y);
         for (const adj of adjacentCells) {
           const adjCell = grid[adj.y][adj.x];
-          // Boş hücreler veya sandıklar geçerli yerleştirme hücreleri
-          if ((adjCell.type === 'empty' || adjCell.type === 'chest') && adjCell.ownerId === null) {
+          // Boş, sandık veya köprü hücreleri geçerli yerleştirme hücreleri
+          // Nehir ve dağ hücreleri GEÇERSİZ (geçilemez)
+          const isValidType = adjCell.type === 'empty' || adjCell.type === 'chest' || adjCell.type === 'bridge';
+          if (isValidType && adjCell.ownerId === null) {
             validCells.add(`${adj.x},${adj.y}`);
           }
         }
@@ -303,14 +369,18 @@ const rollDice = (): number => Math.floor(Math.random() * 6) + 1;
 const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-  // Oyuncu sayısı (2-4)
+  // Oyuncu sayısı (2-4) ve harita türü
   const [playerCount, setPlayerCount] = useState(4);
+  const [mapType, setMapType] = useState<MapType>('flat');
   const [players, setPlayers] = useState<PlayerInfo[]>(() => createPlayers(playerCount));
   const [chests, setChests] = useState<ChestState[]>(() => createInitialChests(playerCount));
-  const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(createPlayers(playerCount), createInitialChests(playerCount)));
+  const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(createPlayers(playerCount), createInitialChests(playerCount), 'flat'));
 
   // Bonus toplandığında gösterilen bildirim
   const [collectedBonus, setCollectedBonus] = useState<{ type: BonusType; playerId: string } | null>(null);
+
+  // Köprü inşa modu (bridge bonusu kullanıldığında)
+  const [isBuildingBridge, setIsBuildingBridge] = useState(false);
 
   // Oyun durumu
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
@@ -383,14 +453,13 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const gridTotalWidth = CELL_SIZE * GRID_WIDTH;
   const gridTotalHeight = CELL_SIZE * GRID_HEIGHT;
 
-  // Oyuncu sayısı değiştiğinde
-  const handlePlayerCountChange = useCallback((count: number) => {
-    setPlayerCount(count);
+  // Oyunu sıfırla (oyuncu sayısı veya harita türü değiştiğinde)
+  const resetGame = useCallback((count: number, map: MapType) => {
     const newPlayers = createPlayers(count);
     const newChests = createInitialChests(count);
     setPlayers(newPlayers);
     setChests(newChests);
-    setGrid(createInitialGrid(newPlayers, newChests));
+    setGrid(createInitialGrid(newPlayers, newChests, map));
     setGamePhase('setup');
     setTurnOrder([]);
     setCurrentTurnIndex(0);
@@ -404,7 +473,20 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setCollectedBonus(null);
     setWinner(null);
     setEliminatedPlayer(null);
+    setIsBuildingBridge(false);
   }, []);
+
+  // Oyuncu sayısı değiştiğinde
+  const handlePlayerCountChange = useCallback((count: number) => {
+    setPlayerCount(count);
+    resetGame(count, mapType);
+  }, [mapType, resetGame]);
+
+  // Harita türü değiştiğinde
+  const handleMapTypeChange = useCallback((map: MapType) => {
+    setMapType(map);
+    resetGame(playerCount, map);
+  }, [playerCount, resetGame]);
 
   // Oyunu başlat
   const handleStartGame = useCallback(() => {
@@ -749,6 +831,14 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     const cell = grid[y][x];
     const cellKey = `${x},${y}`;
 
+    // Köprü inşa modu
+    if (isBuildingBridge) {
+      if (cell.type === 'river') {
+        handleBuildBridge(x, y);
+      }
+      return;
+    }
+
     // Saldıran birim seçimi
     if (gamePhase === 'selectAttacker') {
       if (attackerUnits.has(cellKey)) {
@@ -819,7 +909,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }
 
     onCellPress?.(x, y);
-  }, [grid, gamePhase, remainingPlacements, validPlacementCells, attackerUnits, targetEnemies, currentPlayer, executeCombat, onCellPress, chests]);
+  }, [grid, gamePhase, remainingPlacements, validPlacementCells, attackerUnits, targetEnemies, currentPlayer, executeCombat, onCellPress, chests, isBuildingBridge, handleBuildBridge]);
 
   // İptal (geri dön)
   const handleCancel = useCallback(() => {
@@ -849,7 +939,14 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     return player?.hp ?? null;
   };
 
-  // Oyuncu sayısı seçici
+  // Harita türü etiketleri
+  const mapTypeLabels: Record<MapType, string> = {
+    flat: 'Düz',
+    river: 'Nehir',
+    mountain: 'Dağ',
+  };
+
+  // Oyuncu sayısı ve harita türü seçici
   const renderPlayerCountSelector = () => (
     <View style={styles.selectorContainer}>
       <Text style={styles.selectorLabel}>Oyuncu:</Text>
@@ -862,6 +959,19 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
             disabled={gamePhase !== 'setup'}
           >
             <Text style={[styles.selectorButtonText, playerCount === count && styles.selectorButtonTextActive]}>{count}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.selectorLabel}>Harita:</Text>
+      <View style={styles.selectorButtons}>
+        {(['flat', 'river', 'mountain'] as MapType[]).map(map => (
+          <TouchableOpacity
+            key={map}
+            style={[styles.selectorButton, mapType === map && styles.selectorButtonActive]}
+            onPress={() => handleMapTypeChange(map)}
+            disabled={gamePhase !== 'setup'}
+          >
+            <Text style={[styles.selectorButtonText, mapType === map && styles.selectorButtonTextActive]}>{mapTypeLabels[map]}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -1046,10 +1156,51 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   };
 
+  // Köprü inşa etmeyi başlat
+  const handleStartBuildBridge = useCallback(() => {
+    setIsBuildingBridge(true);
+  }, []);
+
+  // Köprü inşa etmeyi iptal et
+  const handleCancelBuildBridge = useCallback(() => {
+    setIsBuildingBridge(false);
+  }, []);
+
+  // Köprü inşa et (nehir hücresine tıklandığında)
+  const handleBuildBridge = useCallback((x: number, y: number) => {
+    const cell = grid[y][x];
+    if (cell.type !== 'river') return;
+
+    // Köprü bonusunu bul ve kullanım hakkını azalt
+    setPlayers(prevPlayers => prevPlayers.map(p => {
+      if (p.id === currentPlayer?.id) {
+        const updatedBonuses = p.activeBonuses.map(b => {
+          if (b.type === 'bridge' && b.usesRemaining && b.usesRemaining > 0) {
+            return { ...b, usesRemaining: b.usesRemaining - 1 };
+          }
+          return b;
+        }).filter(b => b.type !== 'bridge' || (b.usesRemaining && b.usesRemaining > 0));
+        return { ...p, activeBonuses: updatedBonuses };
+      }
+      return p;
+    }));
+
+    // Hücreyi köprüye çevir
+    setGrid(prevGrid => {
+      const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+      newGrid[y][x].type = 'bridge';
+      return newGrid;
+    });
+
+    setIsBuildingBridge(false);
+  }, [grid, currentPlayer]);
+
   // Aktif bonusları göster (sadece mevcut oyuncu)
   const renderActiveBonuses = () => {
     if (!currentPlayer || currentPlayer.activeBonuses.length === 0) return null;
     if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'gameOver') return null;
+
+    const bridgeBonus = currentPlayer.activeBonuses.find(b => b.type === 'bridge' && b.usesRemaining && b.usesRemaining > 0);
 
     return (
       <View style={styles.activeBonusesContainer}>
@@ -1060,11 +1211,27 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
               <Text style={styles.activeBonusIcon}>{bonusInfo.icon}</Text>
               <View style={styles.activeBonusInfo}>
                 <Text style={styles.activeBonusName}>{bonusInfo.name}</Text>
-                <Text style={styles.activeBonusTurns}>{bonus.turnsRemaining} tur</Text>
+                <Text style={styles.activeBonusTurns}>
+                  {bonus.type === 'bridge' ? `${bonus.usesRemaining} kullanım` : `${bonus.turnsRemaining} tur`}
+                </Text>
               </View>
             </View>
           );
         })}
+        {/* Köprü inşa butonu (sadece nehir haritasında ve bridge bonusu varsa) */}
+        {mapType === 'river' && bridgeBonus && !isBuildingBridge && (
+          <TouchableOpacity style={styles.buildBridgeButton} onPress={handleStartBuildBridge}>
+            <Text style={styles.buildBridgeButtonText}>🌉 Köprü İnşa Et</Text>
+          </TouchableOpacity>
+        )}
+        {isBuildingBridge && (
+          <View style={styles.buildingBridgeContainer}>
+            <Text style={styles.buildingBridgeText}>Nehir hücresine tıkla</Text>
+            <TouchableOpacity style={styles.cancelBuildButton} onPress={handleCancelBuildBridge}>
+              <Text style={styles.cancelBuildButtonText}>İptal</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
@@ -1317,6 +1484,13 @@ const styles = StyleSheet.create({
   activeBonusInfo: { alignItems: 'flex-start' },
   activeBonusName: { color: '#FFD700', fontSize: 10, fontWeight: '700' },
   activeBonusTurns: { color: '#aaa', fontSize: 9 },
+  // Köprü inşa stili
+  buildBridgeButton: { backgroundColor: '#8B7355', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700' },
+  buildBridgeButtonText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  buildingBridgeContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(139, 115, 85, 0.3)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  buildingBridgeText: { color: '#8B7355', fontSize: 11, fontWeight: '600' },
+  cancelBuildButton: { backgroundColor: '#666', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  cancelBuildButtonText: { color: '#fff', fontSize: 10 },
 });
 
 export default GridBoard;
