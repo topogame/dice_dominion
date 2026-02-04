@@ -13,8 +13,8 @@
  */
 
 import React, { useMemo, useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, View, Dimensions, TouchableOpacity, Animated, Easing } from 'react-native';
-import Svg, { Polygon, Rect, Defs, LinearGradient, Stop, RadialGradient, Ellipse } from 'react-native-svg';
+import { StyleSheet, View, Dimensions, TouchableOpacity, Animated, Easing, Image } from 'react-native';
+import Svg, { Polygon, Rect, Defs, LinearGradient, Stop, RadialGradient, Ellipse, ClipPath, Image as SvgImage } from 'react-native-svg';
 import {
   gridToIso,
   isoToGrid,
@@ -29,6 +29,7 @@ import {
 } from '../../utils/isometric';
 import { TerrainColors, MapBackgrounds } from '../../../constants/Colors';
 import { GridCell as GridCellType } from '../../types/game.types';
+import { getTileImage, TileImages } from '../../utils/tileAssets';
 
 interface IsometricGridProps {
   grid: GridCellType[][];
@@ -296,10 +297,30 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
               </>
             ) : (
               <>
-                {/* Normal karo - 3 yüzey */}
+                {/* Tile image clipped to isometric diamond shape */}
+                <Defs>
+                  <ClipPath id={`tileClip-${cellKey}`}>
+                    <Polygon points={topFace} />
+                  </ClipPath>
+                </Defs>
+
+                {/* 3D side faces for depth effect */}
                 <Polygon points={leftFace} fill={leftColor} />
                 <Polygon points={rightFace} fill={rightColor} />
-                <Polygon points={topFace} fill={topColor} />
+
+                {/* Top face with tile image */}
+                <SvgImage
+                  href={getTileImage(cell.type as any, x, y)}
+                  x={-8}
+                  y={-8}
+                  width={ISO_TILE_WIDTH + 16}
+                  height={ISO_TILE_HEIGHT + 16}
+                  clipPath={`url(#tileClip-${cellKey})`}
+                  preserveAspectRatio="xMidYMid slice"
+                />
+
+                {/* Subtle gradient overlay for depth */}
+                <Polygon points={topFace} fill="rgba(0,0,0,0.1)" />
 
                 {/* Nehir için su efekti */}
                 {cell.type === 'river' && (
