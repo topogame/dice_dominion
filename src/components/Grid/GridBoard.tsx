@@ -330,6 +330,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
           setTimeout(() => {
             setGamePhase('selectOption');
             setDiceResult(null);
+            setIsRolling(false);
           }, 1500);
         } else {
           setTimeout(() => {
@@ -338,7 +339,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
             setIsRolling(false);
           }, 1000);
         }
-        setIsRolling(false);
       }
     }, 100);
   }, [isRolling, activePlayers, currentRollingPlayerIndex, turnOrderRolls]);
