@@ -145,25 +145,23 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     </View>
   );
 
-  // Web için ScrollView with fixed dimensions
+  // Web için ScrollView with centering
   if (Platform.OS === 'web') {
     return (
-      <View style={[styles.container, { width: '100%', height: '100%' }]}>
-        <View style={styles.scrollWrapper}>
+      <View style={styles.container}>
+        <ScrollView
+          horizontal={true}
+          showsHorizontalScrollIndicator={true}
+          style={styles.horizontalScroll}
+          contentContainerStyle={styles.horizontalScrollContent}
+        >
           <ScrollView
-            horizontal={true}
-            showsHorizontalScrollIndicator={true}
-            style={styles.horizontalScroll}
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.verticalScrollContent}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={true}
-              style={styles.verticalScroll}
-              contentContainerStyle={styles.scrollContentInner}
-            >
-              {renderGridContent()}
-            </ScrollView>
+            {renderGridContent()}
           </ScrollView>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -235,18 +233,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
-  scrollWrapper: {
-    flex: 1,
-    overflow: 'hidden',
-  },
   horizontalScroll: {
     flex: 1,
   },
-  verticalScroll: {
-    flex: 1,
+  horizontalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: '100%',
   },
-  scrollContentInner: {
-    padding: 10,
+  verticalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    minHeight: '100%',
   },
   gridContainer: {
     flex: 1,

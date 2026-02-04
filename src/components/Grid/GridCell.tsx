@@ -5,10 +5,40 @@
  * Hücre tıklanabilir ve farklı durumları görsel olarak gösterir.
  */
 
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { StyleSheet, View, Pressable, Platform } from 'react-native';
 import { GameColors } from '../../../constants/Colors';
 import { CellType } from '../../types/game.types';
+
+// Web için tıklanabilir wrapper
+const WebClickableWrapper: React.FC<{
+  children: React.ReactNode;
+  onClick: () => void;
+  style: any;
+}> = ({ children, onClick, style }) => {
+  if (Platform.OS !== 'web') {
+    return <>{children}</>;
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.opacity = '0.8';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.opacity = '1';
+      }}
+      style={{
+        ...style,
+        cursor: 'pointer',
+        transition: 'opacity 0.15s ease',
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 interface GridCellProps {
   x: number;
@@ -51,26 +81,16 @@ const GridCell: React.FC<GridCellProps> = ({
   onPress,
 }) => {
   // Hücre tıklandığında
-  const handlePress = () => {
+  const handlePress = useCallback(() => {
     onPress(x, y);
-  };
+  }, [x, y, onPress]);
 
   // Arka plan rengi
   const backgroundColor = getCellBackgroundColor(type, ownerColor);
 
-  return (
-    <Pressable
-      onPress={handlePress}
-      style={[
-        styles.cell,
-        {
-          width: size,
-          height: size,
-          backgroundColor,
-        },
-        isHighlighted && styles.highlighted,
-      ]}
-    >
+  // Hücre içeriği
+  const cellContent = (
+    <>
       {/* Birim göstergesi (X işareti) */}
       {type === 'unit' && (
         <View style={styles.unitMarker}>
@@ -92,6 +112,47 @@ const GridCell: React.FC<GridCellProps> = ({
       {type === 'chest' && (
         <View style={styles.chestMarker} />
       )}
+    </>
+  );
+
+  // Web için native div kullan
+  if (Platform.OS === 'web') {
+    return (
+      <WebClickableWrapper
+        onClick={handlePress}
+        style={{
+          width: size,
+          height: size,
+          backgroundColor,
+          borderWidth: isHighlighted ? 2 : 1,
+          borderStyle: 'solid',
+          borderColor: isHighlighted ? GameColors.highlight : GameColors.gridBorder,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          boxSizing: 'border-box',
+        }}
+      >
+        {cellContent}
+      </WebClickableWrapper>
+    );
+  }
+
+  // Mobil için Pressable kullan
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={[
+        styles.cell,
+        {
+          width: size,
+          height: size,
+          backgroundColor,
+        },
+        isHighlighted && styles.highlighted,
+      ]}
+    >
+      {cellContent}
     </Pressable>
   );
 };
