@@ -5,6 +5,7 @@
  * Yakınlaştırma (pinch-to-zoom) ve kaydırma (pan) desteği içerir.
  * Faz 3: Köşelerde kaleler ve oyuncu renkleri.
  * Faz 4: Zar atma ve birim yerleştirme mekaniği.
+ * Faz 5: Tur sistemi ve sıra belirleme.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -15,6 +16,7 @@ import {
   Dimensions,
   Platform,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -25,20 +27,17 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withSequence,
-  withTiming,
-  useAnimatedProps,
 } from 'react-native-reanimated';
 import GridCell from './GridCell';
 import { GridCell as GridCellType, PlayerColor } from '../../types/game.types';
 import { GameColors, PlayerColors } from '../../../constants/Colors';
 
 // Izgara sabitleri
-const GRID_WIDTH = 24;  // Sütun sayısı
-const GRID_HEIGHT = 12; // Satır sayısı
-const CELL_SIZE = 35;   // Sabit hücre boyutu
-const CASTLE_SIZE = 2;  // Kale boyutu (2x2)
-const CASTLE_MAX_HP = 4; // Maksimum kale HP
+const GRID_WIDTH = 24;
+const GRID_HEIGHT = 12;
+const CELL_SIZE = 35;
+const CASTLE_SIZE = 2;
+const CASTLE_MAX_HP = 4;
 
 // Oyuncu bilgileri
 interface PlayerInfo {
@@ -49,10 +48,17 @@ interface PlayerInfo {
   castlePosition: { x: number; y: number };
   hp: number;
   isActive: boolean;
+  turnOrderRoll?: number; // Sıra belirleme zarı
 }
 
-// Oyun durumu
-type GamePhase = 'waiting' | 'rolling' | 'placing' | 'turnComplete';
+// Oyun fazları
+type GamePhase =
+  | 'setup'           // Oyun başlamadı
+  | 'turnOrderRoll'   // Sıra belirleme zarı atılıyor
+  | 'waiting'         // Oyuncu zar atmayı bekliyor
+  | 'rolling'         // Zar atılıyor
+  | 'placing'         // Birim yerleştirme
+  | 'turnComplete';   // Tur tamamlandı
 
 // 4 köşedeki kale pozisyonları
 const CASTLE_POSITIONS = {
@@ -84,6 +90,7 @@ const createPlayers = (playerCount: number): PlayerInfo[] => {
     castlePosition: CASTLE_POSITIONS[p.corner],
     hp: CASTLE_MAX_HP,
     isActive: index < playerCount,
+    turnOrderRoll: undefined,
   }));
 };
 
@@ -91,7 +98,6 @@ const createPlayers = (playerCount: number): PlayerInfo[] => {
 const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
   const grid: GridCellType[][] = [];
 
-  // Boş ızgara oluştur
   for (let y = 0; y < GRID_HEIGHT; y++) {
     const row: GridCellType[] = [];
     for (let x = 0; x < GRID_WIDTH; x++) {
@@ -109,10 +115,7 @@ const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
   // Aktif oyuncuların kalelerini yerleştir
   players.forEach((player) => {
     if (!player.isActive) return;
-
     const { x: startX, y: startY } = player.castlePosition;
-
-    // 2x2 kale hücrelerini işaretle
     for (let dy = 0; dy < CASTLE_SIZE; dy++) {
       for (let dx = 0; dx < CASTLE_SIZE; dx++) {
         const cell = grid[startY + dy][startX + dx];
@@ -126,19 +129,13 @@ const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
   return grid;
 };
 
-// 4 yönlü komşuluk kontrolü (yukarı, aşağı, sol, sağ)
+// 4 yönlü komşuluk kontrolü
 const getAdjacentCells = (x: number, y: number): { x: number; y: number }[] => {
   const adjacent: { x: number; y: number }[] = [];
-
-  // Yukarı
   if (y > 0) adjacent.push({ x, y: y - 1 });
-  // Aşağı
   if (y < GRID_HEIGHT - 1) adjacent.push({ x, y: y + 1 });
-  // Sol
   if (x > 0) adjacent.push({ x: x - 1, y });
-  // Sağ
   if (x < GRID_WIDTH - 1) adjacent.push({ x: x + 1, y });
-
   return adjacent;
 };
 
@@ -149,19 +146,13 @@ const findValidPlacementCells = (
 ): Set<string> => {
   const validCells = new Set<string>();
 
-  // Tüm hücreleri tara
   for (let y = 0; y < GRID_HEIGHT; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       const cell = grid[y][x];
-
-      // Oyuncunun kalesine veya birimine ait mi?
       if (cell.ownerId === playerId) {
-        // Komşu hücreleri kontrol et
         const adjacentCells = getAdjacentCells(x, y);
-
         for (const adj of adjacentCells) {
           const adjCell = grid[adj.y][adj.x];
-          // Sadece boş hücreler geçerli
           if (adjCell.type === 'empty' && adjCell.ownerId === null) {
             validCells.add(`${adj.x},${adj.y}`);
           }
@@ -174,35 +165,41 @@ const findValidPlacementCells = (
 };
 
 // Zar atma fonksiyonu
-const rollDice = (): number => {
-  return Math.floor(Math.random() * 6) + 1;
-};
+const rollDice = (): number => Math.floor(Math.random() * 6) + 1;
 
 const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
-  // Ekran boyutları
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
   // Oyuncu sayısı (2-4)
   const [playerCount, setPlayerCount] = useState(4);
 
-  // Oyuncu bilgileri
-  const players = useMemo(() => createPlayers(playerCount), [playerCount]);
+  // Oyuncu bilgileri (mutable for turn order rolls)
+  const [players, setPlayers] = useState<PlayerInfo[]>(() => createPlayers(playerCount));
 
   // Izgara durumu
   const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(players));
 
   // Oyun durumu
-  const [gamePhase, setGamePhase] = useState<GamePhase>('waiting');
-  const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
+  const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
+  const [turnOrder, setTurnOrder] = useState<number[]>([]); // Sıralı oyuncu indeksleri
+  const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
+  const [turnNumber, setTurnNumber] = useState(1);
   const [diceResult, setDiceResult] = useState<number | null>(null);
   const [remainingPlacements, setRemainingPlacements] = useState(0);
   const [isRolling, setIsRolling] = useState(false);
 
+  // Sıra belirleme için
+  const [turnOrderRolls, setTurnOrderRolls] = useState<{ playerId: string; roll: number }[]>([]);
+  const [currentRollingPlayerIndex, setCurrentRollingPlayerIndex] = useState(0);
+
+  // Aktif oyuncular
+  const activePlayers = useMemo(() => players.filter(p => p.isActive), [players]);
+
   // Mevcut oyuncu
   const currentPlayer = useMemo(() => {
-    const activePlayers = players.filter(p => p.isActive);
-    return activePlayers[currentPlayerIndex % activePlayers.length];
-  }, [players, currentPlayerIndex]);
+    if (turnOrder.length === 0) return activePlayers[0];
+    return activePlayers[turnOrder[currentTurnIndex % turnOrder.length]];
+  }, [activePlayers, turnOrder, currentTurnIndex]);
 
   // Geçerli yerleştirme hücreleri
   const validPlacementCells = useMemo(() => {
@@ -220,32 +217,91 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
 
-  // Zar animasyonu için
-  const diceScale = useSharedValue(1);
-
-  // Toplam ızgara boyutları
   const gridTotalWidth = CELL_SIZE * GRID_WIDTH;
   const gridTotalHeight = CELL_SIZE * GRID_HEIGHT;
 
-  // Oyuncu sayısı değiştiğinde ızgarayı yeniden oluştur
+  // Oyuncu sayısı değiştiğinde
   const handlePlayerCountChange = useCallback((count: number) => {
     setPlayerCount(count);
     const newPlayers = createPlayers(count);
+    setPlayers(newPlayers);
     setGrid(createInitialGrid(newPlayers));
-    setGamePhase('waiting');
-    setCurrentPlayerIndex(0);
+    setGamePhase('setup');
+    setTurnOrder([]);
+    setCurrentTurnIndex(0);
+    setTurnNumber(1);
     setDiceResult(null);
     setRemainingPlacements(0);
+    setTurnOrderRolls([]);
+    setCurrentRollingPlayerIndex(0);
   }, []);
 
-  // Zar at
+  // Oyunu başlat - sıra belirleme fazına geç
+  const handleStartGame = useCallback(() => {
+    setGamePhase('turnOrderRoll');
+    setTurnOrderRolls([]);
+    setCurrentRollingPlayerIndex(0);
+  }, []);
+
+  // Sıra belirleme zarı at
+  const handleTurnOrderRoll = useCallback(() => {
+    if (isRolling) return;
+
+    setIsRolling(true);
+    const currentRoller = activePlayers[currentRollingPlayerIndex];
+
+    // Zar animasyonu
+    let rollCount = 0;
+    const maxRolls = 10;
+
+    const rollInterval = setInterval(() => {
+      setDiceResult(rollDice());
+      rollCount++;
+
+      if (rollCount >= maxRolls) {
+        clearInterval(rollInterval);
+        const finalRoll = rollDice();
+        setDiceResult(finalRoll);
+
+        // Zar sonucunu kaydet
+        const newRolls = [...turnOrderRolls, { playerId: currentRoller.id, roll: finalRoll }];
+        setTurnOrderRolls(newRolls);
+
+        // Tüm oyuncular attı mı?
+        if (newRolls.length >= activePlayers.length) {
+          // Sırayı belirle (en yüksekten en düşüğe)
+          const sortedRolls = [...newRolls].sort((a, b) => b.roll - a.roll);
+          const order = sortedRolls.map(r =>
+            activePlayers.findIndex(p => p.id === r.playerId)
+          );
+          setTurnOrder(order);
+
+          // Oyunu başlat
+          setTimeout(() => {
+            setGamePhase('waiting');
+            setDiceResult(null);
+          }, 1500);
+        } else {
+          // Sonraki oyuncu
+          setTimeout(() => {
+            setCurrentRollingPlayerIndex(currentRollingPlayerIndex + 1);
+            setDiceResult(null);
+            setIsRolling(false);
+          }, 1000);
+        }
+
+        setIsRolling(false);
+      }
+    }, 100);
+  }, [isRolling, activePlayers, currentRollingPlayerIndex, turnOrderRolls]);
+
+  // Normal zar at (birim yerleştirme için)
   const handleRollDice = useCallback(() => {
     if (isRolling) return;
 
     setIsRolling(true);
     setGamePhase('rolling');
 
-    // Zar animasyonu
     let rollCount = 0;
     const maxRolls = 10;
 
@@ -266,32 +322,29 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Turu bitir
   const handleEndTurn = useCallback(() => {
-    const activePlayers = players.filter(p => p.isActive);
-    const nextIndex = (currentPlayerIndex + 1) % activePlayers.length;
-    setCurrentPlayerIndex(nextIndex);
+    const nextIndex = (currentTurnIndex + 1) % turnOrder.length;
+    setCurrentTurnIndex(nextIndex);
+
+    // Yeni tur mu?
+    if (nextIndex === 0) {
+      setTurnNumber(prev => prev + 1);
+    }
+
     setGamePhase('waiting');
     setDiceResult(null);
     setRemainingPlacements(0);
-  }, [players, currentPlayerIndex]);
+  }, [currentTurnIndex, turnOrder.length]);
 
   // Hücreye tıklandığında
   const handleCellPress = useCallback((x: number, y: number) => {
     const cell = grid[y][x];
 
-    // Kale hücrelerine tıklanamaz
     if (cell.isCastle) return;
-
-    // Yerleştirme aşamasında değilsek çık
     if (gamePhase !== 'placing' || remainingPlacements <= 0) return;
 
-    // Geçerli hücre mi kontrol et
     const cellKey = `${x},${y}`;
-    if (!validPlacementCells.has(cellKey)) {
-      console.log('Geçersiz yerleştirme - sadece komşu boş hücrelere yerleştirilebilir');
-      return;
-    }
+    if (!validPlacementCells.has(cellKey)) return;
 
-    // Birim yerleştir
     setGrid((prevGrid) => {
       const newGrid = prevGrid.map((row) => row.map((c) => ({ ...c })));
       const targetCell = newGrid[y][x];
@@ -300,16 +353,13 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       return newGrid;
     });
 
-    // Kalan yerleştirme sayısını azalt
     const newRemaining = remainingPlacements - 1;
     setRemainingPlacements(newRemaining);
 
-    // Tüm yerleştirmeler bittiyse
     if (newRemaining === 0) {
       setGamePhase('turnComplete');
     }
 
-    // Dış callback'i çağır
     onCellPress?.(x, y);
   }, [grid, gamePhase, remainingPlacements, validPlacementCells, currentPlayer, onCellPress]);
 
@@ -329,7 +379,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     return player?.hp ?? null;
   };
 
-  // Oyuncu sayısı seçici
+  // Oyuncu sayısı seçici (sadece setup fazında)
   const renderPlayerCountSelector = () => (
     <View style={styles.selectorContainer}>
       <Text style={styles.selectorLabel}>Oyuncu Sayısı:</Text>
@@ -342,6 +392,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
               playerCount === count && styles.selectorButtonActive,
             ]}
             onPress={() => handlePlayerCountChange(count)}
+            disabled={gamePhase !== 'setup'}
           >
             <Text
               style={[
@@ -354,72 +405,159 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
           </TouchableOpacity>
         ))}
       </View>
+      {gamePhase === 'setup' && (
+        <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
+          <Text style={styles.startButtonText}>Oyunu Başlat</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  // Oyun kontrolleri
-  const renderGameControls = () => (
-    <View style={styles.controlsContainer}>
-      {/* Mevcut oyuncu bilgisi */}
-      <View style={styles.currentPlayerInfo}>
-        <View style={[styles.playerColorIndicator, { backgroundColor: currentPlayer?.colorHex }]} />
-        <Text style={styles.currentPlayerText}>
-          Sıra: {currentPlayer?.color.toUpperCase()}
-        </Text>
-      </View>
+  // Sıra belirleme UI
+  const renderTurnOrderRoll = () => {
+    if (gamePhase !== 'turnOrderRoll') return null;
 
-      {/* Zar ve yerleştirme kontrolleri */}
-      <View style={styles.diceContainer}>
-        {gamePhase === 'waiting' && (
-          <TouchableOpacity style={styles.rollButton} onPress={handleRollDice}>
-            <Text style={styles.rollButtonText}>🎲 Zar At</Text>
-          </TouchableOpacity>
-        )}
+    const currentRoller = activePlayers[currentRollingPlayerIndex];
 
-        {gamePhase === 'rolling' && (
-          <View style={styles.diceDisplay}>
-            <Text style={styles.diceNumber}>{diceResult || '?'}</Text>
-            <Text style={styles.diceLabel}>Atılıyor...</Text>
-          </View>
-        )}
+    return (
+      <View style={styles.turnOrderContainer}>
+        <Text style={styles.turnOrderTitle}>Sıra Belirleme</Text>
 
-        {gamePhase === 'placing' && (
-          <View style={styles.placementInfo}>
-            <View style={styles.diceDisplay}>
-              <Text style={styles.diceNumber}>{diceResult}</Text>
-            </View>
-            <Text style={styles.placementText}>
-              Kalan: {remainingPlacements} birim
+        {/* Önceki atışlar */}
+        <View style={styles.rollResults}>
+          {turnOrderRolls.map((roll, index) => {
+            const player = activePlayers.find(p => p.id === roll.playerId);
+            return (
+              <View key={roll.playerId} style={styles.rollResultItem}>
+                <View style={[styles.rollResultColor, { backgroundColor: player?.colorHex }]} />
+                <Text style={styles.rollResultText}>{player?.color}: {roll.roll}</Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Mevcut atış */}
+        {currentRollingPlayerIndex < activePlayers.length && (
+          <View style={styles.currentRollContainer}>
+            <View style={[styles.currentRollerIndicator, { backgroundColor: currentRoller?.colorHex }]} />
+            <Text style={styles.currentRollerText}>
+              {currentRoller?.color.toUpperCase()} zarını atsın
             </Text>
-            <Text style={styles.hintText}>
-              Yeşil hücrelere tıklayın
-            </Text>
-          </View>
-        )}
 
-        {gamePhase === 'turnComplete' && (
-          <View style={styles.turnCompleteContainer}>
-            <Text style={styles.turnCompleteText}>Tur Tamamlandı!</Text>
-            <TouchableOpacity style={styles.endTurnButton} onPress={handleEndTurn}>
-              <Text style={styles.endTurnButtonText}>Sonraki Oyuncu →</Text>
+            {diceResult !== null && (
+              <View style={styles.diceDisplayLarge}>
+                <Text style={styles.diceNumberLarge}>{diceResult}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.rollButton, isRolling && styles.rollButtonDisabled]}
+              onPress={handleTurnOrderRoll}
+              disabled={isRolling}
+            >
+              <Text style={styles.rollButtonText}>
+                {isRolling ? 'Atılıyor...' : '🎲 Zar At'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Sonuç - tüm oyuncular attıysa */}
+        {turnOrderRolls.length >= activePlayers.length && (
+          <View style={styles.turnOrderResult}>
+            <Text style={styles.turnOrderResultTitle}>Oyun Sırası:</Text>
+            {[...turnOrderRolls]
+              .sort((a, b) => b.roll - a.roll)
+              .map((roll, index) => {
+                const player = activePlayers.find(p => p.id === roll.playerId);
+                return (
+                  <Text key={roll.playerId} style={styles.turnOrderResultText}>
+                    {index + 1}. {player?.color.toUpperCase()} ({roll.roll})
+                  </Text>
+                );
+              })}
+          </View>
+        )}
       </View>
-    </View>
-  );
+    );
+  };
+
+  // Oyun kontrolleri
+  const renderGameControls = () => {
+    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll') return null;
+
+    return (
+      <View style={styles.controlsContainer}>
+        {/* Tur bilgisi */}
+        <View style={styles.turnInfo}>
+          <Text style={styles.turnNumber}>Tur {turnNumber}</Text>
+          <View style={styles.currentPlayerInfo}>
+            <View style={[styles.playerColorIndicator, { backgroundColor: currentPlayer?.colorHex }]} />
+            <Text style={styles.currentPlayerText}>
+              {currentPlayer?.color.toUpperCase()}'in Sırası
+            </Text>
+          </View>
+        </View>
+
+        {/* Zar ve yerleştirme kontrolleri */}
+        <View style={styles.diceContainer}>
+          {gamePhase === 'waiting' && (
+            <TouchableOpacity style={styles.rollButton} onPress={handleRollDice}>
+              <Text style={styles.rollButtonText}>🎲 Zar At</Text>
+            </TouchableOpacity>
+          )}
+
+          {gamePhase === 'rolling' && (
+            <View style={styles.diceDisplay}>
+              <Text style={styles.diceNumber}>{diceResult || '?'}</Text>
+              <Text style={styles.diceLabel}>Atılıyor...</Text>
+            </View>
+          )}
+
+          {gamePhase === 'placing' && (
+            <View style={styles.placementInfo}>
+              <View style={styles.diceDisplay}>
+                <Text style={styles.diceNumber}>{diceResult}</Text>
+              </View>
+              <Text style={styles.placementText}>
+                Kalan: {remainingPlacements}
+              </Text>
+            </View>
+          )}
+
+          {gamePhase === 'turnComplete' && (
+            <View style={styles.turnCompleteContainer}>
+              <Text style={styles.turnCompleteText}>✓ Tur Bitti</Text>
+              <TouchableOpacity style={styles.endTurnButton} onPress={handleEndTurn}>
+                <Text style={styles.endTurnButtonText}>Sonraki →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
 
   // HP göstergesi
   const renderHPIndicators = () => (
     <View style={styles.hpContainer}>
-      {players.filter((p) => p.isActive).map((player) => (
-        <View key={player.id} style={styles.hpItem}>
-          <View style={[styles.hpColorDot, { backgroundColor: player.colorHex }]} />
-          <Text style={styles.hpText}>
-            {'❤️'.repeat(player.hp)}{'🖤'.repeat(CASTLE_MAX_HP - player.hp)}
-          </Text>
-        </View>
-      ))}
+      {activePlayers.map((player, index) => {
+        const isCurrentPlayer = currentPlayer?.id === player.id;
+        return (
+          <View
+            key={player.id}
+            style={[
+              styles.hpItem,
+              isCurrentPlayer && styles.hpItemActive,
+            ]}
+          >
+            <View style={[styles.hpColorDot, { backgroundColor: player.colorHex }]} />
+            <Text style={styles.hpText}>
+              {'❤️'.repeat(player.hp)}{'🖤'.repeat(CASTLE_MAX_HP - player.hp)}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 
@@ -454,15 +592,16 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     </View>
   );
 
-  // Web için basit scrollable container
+  // Web için
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
         {renderPlayerCountSelector()}
+        {renderTurnOrderRoll()}
         {renderGameControls()}
-        {renderHPIndicators()}
+        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
         <View
-          // @ts-ignore - web style
+          // @ts-ignore
           style={{
             flex: 1,
             overflow: 'auto',
@@ -480,17 +619,13 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Mobil için gesture desteği
   const pinchGesture = Gesture.Pinch()
-    .onStart(() => {
-      savedScale.value = scale.value;
-    })
+    .onStart(() => { savedScale.value = scale.value; })
     .onUpdate((event) => {
       const newScale = savedScale.value * event.scale;
       scale.value = Math.min(Math.max(newScale, 0.5), 3);
     })
     .onEnd(() => {
-      if (scale.value < 0.8) {
-        scale.value = withSpring(0.8);
-      }
+      if (scale.value < 0.8) scale.value = withSpring(0.8);
     });
 
   const panGesture = Gesture.Pan()
@@ -506,17 +641,11 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       const maxTranslateX = (gridTotalWidth * scale.value - screenWidth) / 2;
       const maxTranslateY = (gridTotalHeight * scale.value - screenHeight) / 2;
 
-      if (translateX.value > maxTranslateX) {
-        translateX.value = withSpring(maxTranslateX);
-      } else if (translateX.value < -maxTranslateX) {
-        translateX.value = withSpring(-maxTranslateX);
-      }
+      if (translateX.value > maxTranslateX) translateX.value = withSpring(maxTranslateX);
+      else if (translateX.value < -maxTranslateX) translateX.value = withSpring(-maxTranslateX);
 
-      if (translateY.value > maxTranslateY) {
-        translateY.value = withSpring(maxTranslateY);
-      } else if (translateY.value < -maxTranslateY) {
-        translateY.value = withSpring(-maxTranslateY);
-      }
+      if (translateY.value > maxTranslateY) translateY.value = withSpring(maxTranslateY);
+      else if (translateY.value < -maxTranslateY) translateY.value = withSpring(-maxTranslateY);
     });
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
@@ -532,8 +661,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   return (
     <GestureHandlerRootView style={styles.container}>
       {renderPlayerCountSelector()}
+      {renderTurnOrderRoll()}
       {renderGameControls()}
-      {renderHPIndicators()}
+      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
@@ -553,22 +683,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     backgroundColor: '#2a2a4a',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   selectorLabel: {
     color: '#f0f0f5',
     fontSize: 14,
-    marginRight: 10,
+    marginRight: 8,
   },
   selectorButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   selectorButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 6,
     backgroundColor: '#3a3a5a',
     borderWidth: 2,
     borderColor: 'transparent',
@@ -585,99 +717,203 @@ const styles = StyleSheet.create({
   selectorButtonTextActive: {
     color: '#fff',
   },
+  startButton: {
+    backgroundColor: '#4AD97A',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  startButtonText: {
+    color: '#1a1a2e',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  turnOrderContainer: {
+    backgroundColor: '#252540',
+    padding: 16,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3a3a5a',
+  },
+  turnOrderTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  rollResults: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  rollResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#3a3a5a',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  rollResultColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  rollResultText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  currentRollContainer: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  currentRollerIndicator: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  currentRollerText: {
+    color: '#f0f0f5',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  diceDisplayLarge: {
+    backgroundColor: '#3a3a5a',
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  diceNumberLarge: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  turnOrderResult: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  turnOrderResultTitle: {
+    color: '#90EE90',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  turnOrderResultText: {
+    color: '#fff',
+    fontSize: 14,
+  },
   controlsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: '#252540',
     borderBottomWidth: 1,
     borderBottomColor: '#3a3a5a',
   },
+  turnInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  turnNumber: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   currentPlayerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   playerColorIndicator: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: '#fff',
   },
   currentPlayerText: {
     color: '#f0f0f5',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   diceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   rollButton: {
     backgroundColor: '#4A90D9',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  rollButtonDisabled: {
+    opacity: 0.6,
   },
   rollButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
   diceDisplay: {
     alignItems: 'center',
     backgroundColor: '#3a3a5a',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 50,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 45,
   },
   diceNumber: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '900',
   },
   diceLabel: {
     color: '#888',
-    fontSize: 10,
+    fontSize: 9,
   },
   placementInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   placementText: {
     color: '#90EE90',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-  },
-  hintText: {
-    color: '#888',
-    fontSize: 12,
   },
   turnCompleteContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   turnCompleteText: {
     color: '#90EE90',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   endTurnButton: {
     backgroundColor: '#4AD97A',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   endTurnButtonText: {
     color: '#1a1a2e',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   hpContainer: {
@@ -687,22 +923,30 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     backgroundColor: '#1f1f35',
-    gap: 16,
+    gap: 12,
   },
   hpItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  hpItemActive: {
+    backgroundColor: 'rgba(144, 238, 144, 0.2)',
+    borderWidth: 1,
+    borderColor: '#90EE90',
   },
   hpColorDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     borderWidth: 2,
     borderColor: '#fff',
   },
   hpText: {
-    fontSize: 12,
+    fontSize: 11,
   },
   gridContainer: {
     flex: 1,
