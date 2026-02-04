@@ -826,6 +826,45 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
   }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer]);
 
+  // Köprü inşa etmeyi başlat
+  const handleStartBuildBridge = useCallback(() => {
+    setIsBuildingBridge(true);
+  }, []);
+
+  // Köprü inşa etmeyi iptal et
+  const handleCancelBuildBridge = useCallback(() => {
+    setIsBuildingBridge(false);
+  }, []);
+
+  // Köprü inşa et (nehir hücresine tıklandığında)
+  const handleBuildBridge = useCallback((x: number, y: number) => {
+    const cell = grid[y][x];
+    if (cell.type !== 'river') return;
+
+    // Köprü bonusunu bul ve kullanım hakkını azalt
+    setPlayers(prevPlayers => prevPlayers.map(p => {
+      if (p.id === currentPlayer?.id) {
+        const updatedBonuses = p.activeBonuses.map(b => {
+          if (b.type === 'bridge' && b.usesRemaining && b.usesRemaining > 0) {
+            return { ...b, usesRemaining: b.usesRemaining - 1 };
+          }
+          return b;
+        }).filter(b => b.type !== 'bridge' || (b.usesRemaining && b.usesRemaining > 0));
+        return { ...p, activeBonuses: updatedBonuses };
+      }
+      return p;
+    }));
+
+    // Hücreyi köprüye çevir
+    setGrid(prevGrid => {
+      const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+      newGrid[y][x].type = 'bridge';
+      return newGrid;
+    });
+
+    setIsBuildingBridge(false);
+  }, [grid, currentPlayer]);
+
   // Hücreye tıklandığında
   const handleCellPress = useCallback((x: number, y: number) => {
     const cell = grid[y][x];
@@ -1155,45 +1194,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       </View>
     );
   };
-
-  // Köprü inşa etmeyi başlat
-  const handleStartBuildBridge = useCallback(() => {
-    setIsBuildingBridge(true);
-  }, []);
-
-  // Köprü inşa etmeyi iptal et
-  const handleCancelBuildBridge = useCallback(() => {
-    setIsBuildingBridge(false);
-  }, []);
-
-  // Köprü inşa et (nehir hücresine tıklandığında)
-  const handleBuildBridge = useCallback((x: number, y: number) => {
-    const cell = grid[y][x];
-    if (cell.type !== 'river') return;
-
-    // Köprü bonusunu bul ve kullanım hakkını azalt
-    setPlayers(prevPlayers => prevPlayers.map(p => {
-      if (p.id === currentPlayer?.id) {
-        const updatedBonuses = p.activeBonuses.map(b => {
-          if (b.type === 'bridge' && b.usesRemaining && b.usesRemaining > 0) {
-            return { ...b, usesRemaining: b.usesRemaining - 1 };
-          }
-          return b;
-        }).filter(b => b.type !== 'bridge' || (b.usesRemaining && b.usesRemaining > 0));
-        return { ...p, activeBonuses: updatedBonuses };
-      }
-      return p;
-    }));
-
-    // Hücreyi köprüye çevir
-    setGrid(prevGrid => {
-      const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
-      newGrid[y][x].type = 'bridge';
-      return newGrid;
-    });
-
-    setIsBuildingBridge(false);
-  }, [grid, currentPlayer]);
 
   // Aktif bonusları göster (sadece mevcut oyuncu)
   const renderActiveBonuses = () => {
