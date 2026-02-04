@@ -47,13 +47,8 @@ jobs:
           # Add .nojekyll to prevent Jekyll processing
           touch dist/.nojekyll
 
-          # Fix paths in all HTML files - convert absolute to relative
-          find dist -name "*.html" -type f -exec sed -i 's|"/_expo|"./_expo|g' {} +
-          find dist -name "*.html" -type f -exec sed -i 's|"/assets|"./assets|g' {} +
-          find dist -name "*.html" -type f -exec sed -i 's|"/favicon|"./favicon|g' {} +
-
-          # Fix paths in JS bundle
-          find dist/_expo -name "*.js" -type f -exec sed -i 's|"/assets/|"./assets/|g' {} + || true
+          # With baseUrl=/dice_dominion, paths are already correct for subdirectory
+          # No path modification needed - Expo handles this with baseUrl
 
           # Create game folder for clean URLs
           mkdir -p dist/game
