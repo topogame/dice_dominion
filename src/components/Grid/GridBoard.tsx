@@ -6,6 +6,7 @@
  * Faz 5: Tur sistemi ve sıra belirleme.
  * Faz 6: Savaş sistemi - Seçenek A/B/C ve zar savaşları.
  * Faz 7: Kale saldırısı, HP azaltma, yenilenme, ele geçirme ve zafer.
+ * Faz 8: Bonus sandık sistemi - sandık toplama ve bonus efektleri.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -51,6 +52,7 @@ interface PlayerInfo {
   isAlive: boolean;  // Oyuncu hala oyunda mı?
   castleFirstDamageTurn: number | null;  // HP yenilenme zamanlayıcısı için
   turnOrderRoll?: number;
+  activeBonuses: ActiveBonus[];  // Aktif bonuslar
 }
 
 // Tur seçenekleri
@@ -80,6 +82,24 @@ interface CombatState {
   attacksRemaining: number;  // Option C için
   isAttackingCastle: boolean;  // Kale saldırısı mı?
   defenderId: string | null;   // Savunan oyuncu ID'si
+}
+
+// Bonus türleri
+type BonusType = 'attack' | 'defense' | 'speed' | 'bridge';
+
+// Aktif bonus durumu
+interface ActiveBonus {
+  type: BonusType;
+  turnsRemaining: number;
+  usesRemaining?: number;  // Sadece 'bridge' için (max 2 kullanım)
+}
+
+// Sandık durumu
+interface ChestState {
+  x: number;
+  y: number;
+  bonusType: BonusType;
+  isCollected: boolean;
 }
 
 // 4 köşedeki kale pozisyonları
@@ -115,11 +135,69 @@ const createPlayers = (playerCount: number): PlayerInfo[] => {
     isAlive: index < playerCount,
     castleFirstDamageTurn: null,
     turnOrderRoll: undefined,
+    activeBonuses: [],
   }));
 };
 
+// Rastgele bonus türü seç
+const getRandomBonusType = (): BonusType => {
+  const types: BonusType[] = ['attack', 'defense', 'speed', 'bridge'];
+  return types[Math.floor(Math.random() * types.length)];
+};
+
+// Bonus türüne göre ikon ve açıklama
+const getBonusInfo = (type: BonusType): { icon: string; name: string; desc: string } => {
+  switch (type) {
+    case 'attack':
+      return { icon: '⚔️', name: 'Saldırı', desc: '+1 saldırı zarı' };
+    case 'defense':
+      return { icon: '🛡️', name: 'Savunma', desc: '+1 savunma zarı' };
+    case 'speed':
+      return { icon: '💨', name: 'Hız', desc: '+1 yerleştirme' };
+    case 'bridge':
+      return { icon: '🌉', name: 'Köprü', desc: '2 köprü inşa' };
+  }
+};
+
+// Sandıkları oyunun başında oluştur (köşelerden eşit mesafede)
+const createInitialChests = (playerCount: number): ChestState[] => {
+  const chests: ChestState[] = [];
+
+  // Haritanın merkezine yakın pozisyonlar (köşelerden eşit mesafede)
+  const centerX = Math.floor(GRID_WIDTH / 2);
+  const centerY = Math.floor(GRID_HEIGHT / 2);
+
+  // Oyuncu sayısına göre sandık pozisyonları
+  const chestPositions: { x: number; y: number }[] = [];
+
+  if (playerCount >= 2) {
+    // İlk 2 sandık: merkeze yakın, yatay eksende
+    chestPositions.push({ x: centerX - 4, y: centerY });
+    chestPositions.push({ x: centerX + 3, y: centerY - 1 });
+  }
+  if (playerCount >= 3) {
+    // 3. sandık: merkeze yakın, alt kısımda
+    chestPositions.push({ x: centerX, y: centerY + 3 });
+  }
+  if (playerCount >= 4) {
+    // 4. sandık: merkeze yakın, üst kısımda
+    chestPositions.push({ x: centerX - 1, y: centerY - 4 });
+  }
+
+  for (let i = 0; i < playerCount; i++) {
+    chests.push({
+      x: chestPositions[i].x,
+      y: chestPositions[i].y,
+      bonusType: getRandomBonusType(),
+      isCollected: false,
+    });
+  }
+
+  return chests;
+};
+
 // Oyuncularla birlikte ızgara oluştur
-const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
+const createInitialGrid = (players: PlayerInfo[], chests: ChestState[]): GridCellType[][] => {
   const grid: GridCellType[][] = [];
 
   for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -130,6 +208,7 @@ const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
     grid.push(row);
   }
 
+  // Kaleleri yerleştir
   players.forEach((player) => {
     if (!player.isActive) return;
     const { x: startX, y: startY } = player.castlePosition;
@@ -140,6 +219,13 @@ const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
         cell.ownerId = player.id;
         cell.isCastle = true;
       }
+    }
+  });
+
+  // Sandıkları yerleştir
+  chests.forEach((chest) => {
+    if (!chest.isCollected) {
+      grid[chest.y][chest.x].type = 'chest';
     }
   });
 
@@ -166,7 +252,8 @@ const findValidPlacementCells = (grid: GridCellType[][], playerId: string): Set<
         const adjacentCells = getAdjacentCells(x, y);
         for (const adj of adjacentCells) {
           const adjCell = grid[adj.y][adj.x];
-          if (adjCell.type === 'empty' && adjCell.ownerId === null) {
+          // Boş hücreler veya sandıklar geçerli yerleştirme hücreleri
+          if ((adjCell.type === 'empty' || adjCell.type === 'chest') && adjCell.ownerId === null) {
             validCells.add(`${adj.x},${adj.y}`);
           }
         }
@@ -219,7 +306,11 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   // Oyuncu sayısı (2-4)
   const [playerCount, setPlayerCount] = useState(4);
   const [players, setPlayers] = useState<PlayerInfo[]>(() => createPlayers(playerCount));
-  const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(players));
+  const [chests, setChests] = useState<ChestState[]>(() => createInitialChests(playerCount));
+  const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(createPlayers(playerCount), createInitialChests(playerCount)));
+
+  // Bonus toplandığında gösterilen bildirim
+  const [collectedBonus, setCollectedBonus] = useState<{ type: BonusType; playerId: string } | null>(null);
 
   // Oyun durumu
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
@@ -296,8 +387,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const handlePlayerCountChange = useCallback((count: number) => {
     setPlayerCount(count);
     const newPlayers = createPlayers(count);
+    const newChests = createInitialChests(count);
     setPlayers(newPlayers);
-    setGrid(createInitialGrid(newPlayers));
+    setChests(newChests);
+    setGrid(createInitialGrid(newPlayers, newChests));
     setGamePhase('setup');
     setTurnOrder([]);
     setCurrentTurnIndex(0);
@@ -308,6 +401,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setTurnOrderRolls([]);
     setCurrentRollingPlayerIndex(0);
     setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
+    setCollectedBonus(null);
+    setWinner(null);
+    setEliminatedPlayer(null);
   }, []);
 
   // Oyunu başlat
@@ -377,6 +473,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setIsRolling(true);
     setGamePhase('rolling');
 
+    // Hız bonusu kontrolü
+    const speedBonus = currentPlayer?.activeBonuses.find(b => b.type === 'speed') ? 1 : 0;
+
     let rollCount = 0;
     const maxRolls = 10;
 
@@ -386,19 +485,27 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
       if (rollCount >= maxRolls) {
         clearInterval(rollInterval);
-        const finalResult = rollDice();
+        const baseResult = rollDice();
+        const finalResult = baseResult + speedBonus;
         setDiceResult(finalResult);
         setRemainingPlacements(finalResult);
         setGamePhase('placing');
         setIsRolling(false);
       }
     }, 100);
-  }, [isRolling]);
+  }, [isRolling, currentPlayer]);
 
   // Savaş zarları at
   const executeCombat = useCallback(() => {
     setGamePhase('combat');
     setShowCombatResult(false);
+
+    // Bonus etkileri hesapla
+    const attackBonus = currentPlayer?.activeBonuses.find(b => b.type === 'attack') ? 1 : 0;
+    const defenderPos = combat.defenderPos;
+    const defenderId = defenderPos ? grid[defenderPos.y][defenderPos.x].ownerId : null;
+    const defender = defenderId ? players.find(p => p.id === defenderId) : null;
+    const defenseBonus = defender?.activeBonuses.find(b => b.type === 'defense') ? 1 : 0;
 
     let rollCount = 0;
     const maxRolls = 8;
@@ -413,8 +520,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
       if (rollCount >= maxRolls) {
         clearInterval(rollInterval);
-        const attackerFinal = rollDice();
-        const defenderFinal = rollDice();
+        const attackerBase = rollDice();
+        const defenderBase = rollDice();
+
+        // Bonusları uygula
+        const attackerFinal = attackerBase + attackBonus;
+        const defenderFinal = defenderBase + defenseBonus;
 
         // Beraberlik savunana gider
         let result: 'win' | 'lose' | 'tie';
@@ -435,7 +546,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         setShowCombatResult(true);
       }
     }, 150);
-  }, []);
+  }, [currentPlayer, combat.defenderPos, grid, players]);
 
   // Savaş sonucunu uygula
   const applyCombatResult = useCallback(() => {
@@ -550,18 +661,58 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Turu bitir
   const handleEndTurn = useCallback(() => {
-    // Kale HP yenilenmesi kontrolü (her 3 turda bir, ilk hasar aldıktan sonra)
+    // Bonus sürelerini azalt (sadece mevcut oyuncu için)
     setPlayers(prevPlayers => {
       return prevPlayers.map(p => {
+        // Kale HP yenilenmesi kontrolü (her 3 turda bir, ilk hasar aldıktan sonra)
+        let updatedPlayer = { ...p };
         if (p.isAlive && p.castleFirstDamageTurn !== null && p.hp < CASTLE_MAX_HP) {
           const turnsSinceFirstDamage = turnNumber - p.castleFirstDamageTurn;
           if (turnsSinceFirstDamage > 0 && turnsSinceFirstDamage % 3 === 0) {
-            return { ...p, hp: Math.min(p.hp + 1, CASTLE_MAX_HP) };
+            updatedPlayer.hp = Math.min(p.hp + 1, CASTLE_MAX_HP);
           }
         }
-        return p;
+
+        // Bonus sürelerini azalt (mevcut oyuncu)
+        if (p.id === currentPlayer?.id) {
+          updatedPlayer.activeBonuses = p.activeBonuses
+            .map(b => ({ ...b, turnsRemaining: b.turnsRemaining - 1 }))
+            .filter(b => b.turnsRemaining > 0);
+        }
+
+        return updatedPlayer;
       });
     });
+
+    // Tur 10'dan sonra, tüm sandıklar toplandıysa yeni sandık spawn et
+    const allChestsCollected = chests.every(c => c.isCollected);
+    if (turnNumber >= 10 && allChestsCollected) {
+      // Boş bir hücre bul
+      let emptyCell: { x: number; y: number } | null = null;
+      for (let attempts = 0; attempts < 50; attempts++) {
+        const randX = Math.floor(Math.random() * (GRID_WIDTH - 4)) + 2;
+        const randY = Math.floor(Math.random() * (GRID_HEIGHT - 2)) + 1;
+        const cell = grid[randY][randX];
+        if (cell.type === 'empty' && !cell.isCastle) {
+          emptyCell = { x: randX, y: randY };
+          break;
+        }
+      }
+      if (emptyCell) {
+        const newChest: ChestState = {
+          x: emptyCell.x,
+          y: emptyCell.y,
+          bonusType: getRandomBonusType(),
+          isCollected: false,
+        };
+        setChests(prev => [...prev, newChest]);
+        setGrid(prevGrid => {
+          const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+          newGrid[emptyCell!.y][emptyCell!.x].type = 'chest';
+          return newGrid;
+        });
+      }
+    }
 
     // Sonraki oyuncuyu bul (elenen oyuncuları atla)
     let nextIndex = (currentTurnIndex + 1) % turnOrder.length;
@@ -591,7 +742,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setDiceResult(null);
     setRemainingPlacements(0);
     setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
-  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder]);
+  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer]);
 
   // Hücreye tıklandığında
   const handleCellPress = useCallback((x: number, y: number) => {
@@ -625,6 +776,32 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       if (remainingPlacements <= 0) return;
       if (!validPlacementCells.has(cellKey)) return;
 
+      // Sandık var mı kontrol et
+      const chestAtCell = chests.find(c => c.x === x && c.y === y && !c.isCollected);
+      if (chestAtCell) {
+        // Sandığı topla
+        setChests(prevChests => prevChests.map(c =>
+          c.x === x && c.y === y ? { ...c, isCollected: true } : c
+        ));
+
+        // Bonusu oyuncuya ekle
+        setPlayers(prevPlayers => prevPlayers.map(p => {
+          if (p.id === currentPlayer.id) {
+            const newBonus: ActiveBonus = {
+              type: chestAtCell.bonusType,
+              turnsRemaining: 2,
+              usesRemaining: chestAtCell.bonusType === 'bridge' ? 2 : undefined,
+            };
+            return { ...p, activeBonuses: [...p.activeBonuses, newBonus] };
+          }
+          return p;
+        }));
+
+        // Bonus bildirimini göster
+        setCollectedBonus({ type: chestAtCell.bonusType, playerId: currentPlayer.id });
+        setTimeout(() => setCollectedBonus(null), 2000);
+      }
+
       setGrid(prevGrid => {
         const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
         const targetCell = newGrid[y][x];
@@ -642,7 +819,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }
 
     onCellPress?.(x, y);
-  }, [grid, gamePhase, remainingPlacements, validPlacementCells, attackerUnits, targetEnemies, currentPlayer, executeCombat, onCellPress]);
+  }, [grid, gamePhase, remainingPlacements, validPlacementCells, attackerUnits, targetEnemies, currentPlayer, executeCombat, onCellPress, chests]);
 
   // İptal (geri dön)
   const handleCancel = useCallback(() => {
@@ -855,6 +1032,43 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   };
 
+  // Bonus toplama bildirimi
+  const renderBonusCollectedNotification = () => {
+    if (!collectedBonus) return null;
+    const bonusInfo = getBonusInfo(collectedBonus.type);
+
+    return (
+      <View style={styles.bonusCollectedContainer}>
+        <Text style={styles.bonusCollectedIcon}>{bonusInfo.icon}</Text>
+        <Text style={styles.bonusCollectedText}>{bonusInfo.name} Bonusu Toplandı!</Text>
+        <Text style={styles.bonusCollectedDesc}>{bonusInfo.desc}</Text>
+      </View>
+    );
+  };
+
+  // Aktif bonusları göster (sadece mevcut oyuncu)
+  const renderActiveBonuses = () => {
+    if (!currentPlayer || currentPlayer.activeBonuses.length === 0) return null;
+    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'gameOver') return null;
+
+    return (
+      <View style={styles.activeBonusesContainer}>
+        {currentPlayer.activeBonuses.map((bonus, index) => {
+          const bonusInfo = getBonusInfo(bonus.type);
+          return (
+            <View key={`${bonus.type}-${index}`} style={styles.activeBonusItem}>
+              <Text style={styles.activeBonusIcon}>{bonusInfo.icon}</Text>
+              <View style={styles.activeBonusInfo}>
+                <Text style={styles.activeBonusName}>{bonusInfo.name}</Text>
+                <Text style={styles.activeBonusTurns}>{bonus.turnsRemaining} tur</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   // Oyun kontrolleri
   const renderGameControls = () => {
     if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'selectOption' || gamePhase === 'gameOver') return null;
@@ -958,8 +1172,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         {renderOptionMenu()}
         {renderGameOver()}
         {renderEliminatedNotification()}
+        {renderBonusCollectedNotification()}
         {renderGameControls()}
         {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+        {renderActiveBonuses()}
         <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           {renderGridContent()}
         </View>
@@ -995,8 +1211,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       {renderOptionMenu()}
       {renderGameOver()}
       {renderEliminatedNotification()}
+      {renderBonusCollectedNotification()}
       {renderGameControls()}
       {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
+      {renderActiveBonuses()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
@@ -1087,6 +1305,18 @@ const styles = StyleSheet.create({
   eliminatedContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 107, 107, 0.3)', padding: 8, gap: 8 },
   eliminatedPlayerColor: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff' },
   eliminatedText: { color: '#FF6B6B', fontSize: 14, fontWeight: '700' },
+  // Bonus toplama bildirimi stili
+  bonusCollectedContainer: { backgroundColor: 'rgba(255, 215, 0, 0.3)', padding: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, borderBottomWidth: 2, borderBottomColor: '#FFD700' },
+  bonusCollectedIcon: { fontSize: 24 },
+  bonusCollectedText: { color: '#FFD700', fontSize: 14, fontWeight: '700' },
+  bonusCollectedDesc: { color: '#ddd', fontSize: 11 },
+  // Aktif bonuslar stili
+  activeBonusesContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 8 },
+  activeBonusItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 215, 0, 0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#FFD700', gap: 6 },
+  activeBonusIcon: { fontSize: 18 },
+  activeBonusInfo: { alignItems: 'flex-start' },
+  activeBonusName: { color: '#FFD700', fontSize: 10, fontWeight: '700' },
+  activeBonusTurns: { color: '#aaa', fontSize: 9 },
 });
 
 export default GridBoard;
