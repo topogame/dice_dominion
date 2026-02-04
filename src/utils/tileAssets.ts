@@ -18,18 +18,87 @@ export const TileImages = {
   dirt: require('../../assets/tiles/dirt.jpg') as ImageSourcePropType,
 };
 
-// Grass variant selection based on grid position (deterministic pseudo-random)
+// Grid dimensions (must match isometric.ts)
+const GRID_WIDTH = 24;
+const GRID_HEIGHT = 12;
+
+// Cluster centers for natural grass distribution
+// Each cluster has: x, y (center), type (0=grass1, 1=grass2, 2=grass3), radius
+interface GrassCluster {
+  x: number;
+  y: number;
+  type: 0 | 1 | 2;
+  radius: number;
+}
+
+// Pre-defined cluster centers for natural look
+// grass1 = base grass (larger areas)
+// grass2 = flowery patches (medium clusters)
+// grass3 = mushroom/path areas (smaller scattered clusters)
+const grassClusters: GrassCluster[] = [
+  // Large grass1 base areas (covers most of the map)
+  { x: 6, y: 3, type: 0, radius: 8 },
+  { x: 18, y: 9, type: 0, radius: 8 },
+  { x: 12, y: 6, type: 0, radius: 6 },
+
+  // Medium grass2 flowery patches
+  { x: 3, y: 8, type: 1, radius: 4 },
+  { x: 20, y: 4, type: 1, radius: 4 },
+  { x: 10, y: 2, type: 1, radius: 3 },
+  { x: 15, y: 10, type: 1, radius: 3 },
+
+  // Smaller grass3 mushroom/path clusters
+  { x: 8, y: 10, type: 2, radius: 3 },
+  { x: 22, y: 7, type: 2, radius: 2 },
+  { x: 4, y: 4, type: 2, radius: 2 },
+  { x: 16, y: 3, type: 2, radius: 2 },
+  { x: 1, y: 6, type: 2, radius: 2 },
+];
+
+// Calculate squared distance (avoid sqrt for performance)
+const distanceSquared = (x1: number, y1: number, x2: number, y2: number): number => {
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  return dx * dx + dy * dy;
+};
+
+// Grass variant selection using cluster-based distribution for natural look
 export const getGrassTileImage = (x: number, y: number): ImageSourcePropType => {
-  const variant = (x * 7 + y * 13) % 3;
-  switch (variant) {
-    case 0:
-      return TileImages.grass1;
-    case 1:
-      return TileImages.grass2;
-    case 2:
-    default:
-      return TileImages.grass3;
+  // Find the cluster that most strongly influences this tile
+  // Priority: smaller clusters override larger ones (more specific)
+  let bestCluster: GrassCluster | null = null;
+  let bestScore = -1;
+
+  for (const cluster of grassClusters) {
+    const dist = Math.sqrt(distanceSquared(x, y, cluster.x, cluster.y));
+
+    // Score: how "inside" the cluster this tile is (1.0 = center, 0 = edge)
+    // Smaller clusters get priority when overlapping
+    if (dist <= cluster.radius) {
+      const normalizedDist = dist / cluster.radius;
+      const insideScore = 1 - normalizedDist;
+      // Boost score for smaller clusters (they should override larger ones)
+      const sizeBonus = 1 / cluster.radius;
+      const score = insideScore + sizeBonus * 2;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCluster = cluster;
+      }
+    }
   }
+
+  // If inside a cluster, use that type
+  if (bestCluster) {
+    switch (bestCluster.type) {
+      case 0: return TileImages.grass1;
+      case 1: return TileImages.grass2;
+      case 2: return TileImages.grass3;
+    }
+  }
+
+  // Default: grass1 for tiles not in any cluster
+  return TileImages.grass1;
 };
 
 // Get tile image based on terrain type (always returns valid image)
