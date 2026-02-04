@@ -6,25 +6,18 @@
  */
 
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ImageBackground } from 'react-native';
-import { useRouter } from 'expo-router';
+import { StyleSheet, View, Text, Pressable } from 'react-native';
+import { Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function MainMenuScreen() {
-  // Router ile ekranlar arası geçiş
-  const router = useRouter();
   // Güvenli alan kenar boşlukları (notch vb.)
   const insets = useSafeAreaInsets();
   // Cihaz renk teması
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  // Oynat butonuna tıklandığında
-  const handlePlay = () => {
-    router.push('/game');
-  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -54,15 +47,19 @@ export default function MainMenuScreen() {
 
         {/* Buton Alanı */}
         <View style={styles.buttonContainer}>
-          {/* Oynat Butonu */}
-          <TouchableOpacity
-            style={[styles.playButton, isDark && styles.playButtonDark]}
-            onPress={handlePlay}
-            activeOpacity={0.8}
-          >
-            <FontAwesome name="play" size={24} color="#ffffff" style={styles.playIcon} />
-            <Text style={styles.playButtonText}>OYNA</Text>
-          </TouchableOpacity>
+          {/* Oynat Butonu - Link ile sarılmış */}
+          <Link href="/game" asChild>
+            <Pressable
+              style={({ pressed }) => [
+                styles.playButton,
+                isDark && styles.playButtonDark,
+                pressed && styles.playButtonPressed,
+              ]}
+            >
+              <FontAwesome name="play" size={24} color="#ffffff" style={styles.playIcon} />
+              <Text style={styles.playButtonText}>OYNA</Text>
+            </Pressable>
+          </Link>
         </View>
 
         {/* Alt Bilgi */}
@@ -186,10 +183,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    cursor: 'pointer',
   },
   playButtonDark: {
     backgroundColor: '#6BA3E0',
     shadowColor: '#6BA3E0',
+  },
+  playButtonPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
   },
   playIcon: {
     marginRight: 12,
