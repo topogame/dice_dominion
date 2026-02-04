@@ -634,7 +634,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
     return (
       <View style={styles.optionMenuContainer}>
-        <Text style={styles.optionMenuTitle}>Seçenek Seç</Text>
+        <View style={styles.optionPlayerIndicator}>
+          <View style={[styles.optionPlayerColor, { backgroundColor: currentPlayer?.colorHex }]} />
+          <Text style={styles.optionMenuTitle}>Seçenek Seç</Text>
+        </View>
         <View style={styles.optionButtons}>
           <TouchableOpacity style={styles.optionButton} onPress={() => handleSelectOption('A')}>
             <Text style={styles.optionButtonLabel}>A</Text>
@@ -818,7 +821,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         {renderTurnOrderRoll()}
         {renderOptionMenu()}
         {renderGameControls()}
-        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'selectOption' && renderHPIndicators()}
+        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
         <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           {renderGridContent()}
         </View>
@@ -853,7 +856,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       {renderTurnOrderRoll()}
       {renderOptionMenu()}
       {renderGameControls()}
-      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'selectOption' && renderHPIndicators()}
+      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
@@ -886,7 +889,9 @@ const styles = StyleSheet.create({
   diceNumberLarge: { color: '#fff', fontSize: 28, fontWeight: '900' },
   turnOrderResultTitle: { color: '#90EE90', fontSize: 14, fontWeight: '700', marginTop: 8 },
   optionMenuContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
-  optionMenuTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  optionPlayerIndicator: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  optionPlayerColor: { width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: '#fff' },
+  optionMenuTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
   optionButtons: { flexDirection: 'row', gap: 10 },
   optionButton: { backgroundColor: '#4A90D9', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, alignItems: 'center', minWidth: 90 },
   optionButtonDisabled: { backgroundColor: '#3a3a5a', opacity: 0.5 },
