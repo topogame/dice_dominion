@@ -30,8 +30,7 @@ import { GameColors, PlayerColors } from '../../../constants/Colors';
 // Izgara sabitleri
 const GRID_WIDTH = 24;  // Sütun sayısı
 const GRID_HEIGHT = 12; // Satır sayısı
-const MIN_CELL_SIZE = 30;
-const MAX_CELL_SIZE = 60;
+const CELL_SIZE = 35;   // Sabit hücre boyutu
 
 interface GridBoardProps {
   onCellPress?: (x: number, y: number) => void;
@@ -72,17 +71,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
 
-  // Hücre boyutunu hesapla (ekrana sığacak şekilde)
-  const baseCellSize = Math.min(
-    (screenWidth - 20) / GRID_WIDTH,
-    (screenHeight - 200) / GRID_HEIGHT,
-    MAX_CELL_SIZE
-  );
-  const cellSize = Math.max(baseCellSize, MIN_CELL_SIZE);
-
   // Toplam ızgara boyutları
-  const gridTotalWidth = cellSize * GRID_WIDTH;
-  const gridTotalHeight = cellSize * GRID_HEIGHT;
+  const gridTotalWidth = CELL_SIZE * GRID_WIDTH;
+  const gridTotalHeight = CELL_SIZE * GRID_HEIGHT;
 
   // Test için: Hücreye tıklandığında rengini değiştir
   const handleCellPress = useCallback((x: number, y: number) => {
@@ -139,7 +130,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
               key={`cell-${x}-${y}`}
               x={x}
               y={y}
-              size={cellSize}
+              size={CELL_SIZE}
               type={cell.type}
               ownerId={cell.ownerId}
               ownerColor={getOwnerColor(cell.ownerId)}
@@ -154,22 +145,25 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     </View>
   );
 
-  // Web için ScrollView
+  // Web için ScrollView with fixed dimensions
   if (Platform.OS === 'web') {
     return (
-      <View style={styles.container}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator
-          contentContainerStyle={styles.scrollContent}
-        >
+      <View style={[styles.container, { width: '100%', height: '100%' }]}>
+        <View style={styles.scrollWrapper}>
           <ScrollView
-            showsVerticalScrollIndicator
-            contentContainerStyle={styles.scrollContent}
+            horizontal={true}
+            showsHorizontalScrollIndicator={true}
+            style={styles.horizontalScroll}
           >
-            {renderGridContent()}
+            <ScrollView
+              showsVerticalScrollIndicator={true}
+              style={styles.verticalScroll}
+              contentContainerStyle={styles.scrollContentInner}
+            >
+              {renderGridContent()}
+            </ScrollView>
           </ScrollView>
-        </ScrollView>
+        </View>
       </View>
     );
   }
@@ -240,16 +234,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  scrollWrapper: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  horizontalScroll: {
+    flex: 1,
+  },
+  verticalScroll: {
+    flex: 1,
+  },
+  scrollContentInner: {
     padding: 10,
   },
   gridContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
