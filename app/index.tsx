@@ -48,7 +48,7 @@ export default function MainMenuScreen() {
         {/* Buton Alanı */}
         <View style={styles.buttonContainer}>
           {/* Oynat Butonu - Link ile sarılmış */}
-          <Link href="/game" asChild>
+          <Link href="./game" asChild>
             <Pressable
               style={({ pressed }) => [
                 styles.playButton,
