@@ -5,6 +5,7 @@
  * Faz 4: Zar atma ve birim yerleştirme mekaniği.
  * Faz 5: Tur sistemi ve sıra belirleme.
  * Faz 6: Savaş sistemi - Seçenek A/B/C ve zar savaşları.
+ * Faz 7: Kale saldırısı, HP azaltma, yenilenme, ele geçirme ve zafer.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -47,6 +48,8 @@ interface PlayerInfo {
   castlePosition: { x: number; y: number };
   hp: number;
   isActive: boolean;
+  isAlive: boolean;  // Oyuncu hala oyunda mı?
+  castleFirstDamageTurn: number | null;  // HP yenilenme zamanlayıcısı için
   turnOrderRoll?: number;
 }
 
@@ -64,7 +67,8 @@ type GamePhase =
   | 'selectAttacker'    // Saldıran birimi seç
   | 'selectTarget'      // Hedef seç
   | 'combat'            // Savaş animasyonu
-  | 'turnComplete';
+  | 'turnComplete'
+  | 'gameOver';         // Oyun bitti - kazanan var
 
 // Savaş durumu
 interface CombatState {
@@ -74,6 +78,8 @@ interface CombatState {
   defenderRoll: number | null;
   result: 'win' | 'lose' | 'tie' | null;
   attacksRemaining: number;  // Option C için
+  isAttackingCastle: boolean;  // Kale saldırısı mı?
+  defenderId: string | null;   // Savunan oyuncu ID'si
 }
 
 // 4 köşedeki kale pozisyonları
@@ -106,6 +112,8 @@ const createPlayers = (playerCount: number): PlayerInfo[] => {
     castlePosition: CASTLE_POSITIONS[p.corner],
     hp: CASTLE_MAX_HP,
     isActive: index < playerCount,
+    isAlive: index < playerCount,
+    castleFirstDamageTurn: null,
     turnOrderRoll: undefined,
   }));
 };
@@ -235,8 +243,16 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     defenderRoll: null,
     result: null,
     attacksRemaining: 0,
+    isAttackingCastle: false,
+    defenderId: null,
   });
   const [showCombatResult, setShowCombatResult] = useState(false);
+
+  // Kazanan oyuncu (oyun bittiğinde)
+  const [winner, setWinner] = useState<PlayerInfo | null>(null);
+
+  // Elenen oyuncu bildirimi
+  const [eliminatedPlayer, setEliminatedPlayer] = useState<PlayerInfo | null>(null);
 
   // Aktif oyuncular
   const activePlayers = useMemo(() => players.filter(p => p.isActive), [players]);
@@ -291,7 +307,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setRemainingPlacements(0);
     setTurnOrderRolls([]);
     setCurrentRollingPlayerIndex(0);
-    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
   }, []);
 
   // Oyunu başlat
@@ -423,29 +439,89 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Savaş sonucunu uygula
   const applyCombatResult = useCallback(() => {
-    const { attackerPos, defenderPos, result, attacksRemaining } = combat;
+    const { attackerPos, defenderPos, result, attacksRemaining, isAttackingCastle, defenderId } = combat;
     if (!attackerPos || !defenderPos || !result) return;
 
-    setGrid(prevGrid => {
-      const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
-      const attackerCell = newGrid[attackerPos.y][attackerPos.x];
-      const defenderCell = newGrid[defenderPos.y][defenderPos.x];
+    let playerEliminated: PlayerInfo | null = null;
+    let gameWinner: PlayerInfo | null = null;
 
-      if (result === 'win') {
-        // Saldıran kazandı: savunanın hücresi saldırana geçer
-        defenderCell.ownerId = currentPlayer.id;
-        if (defenderCell.type === 'unit') {
-          defenderCell.type = 'unit';
+    if (result === 'win') {
+      if (isAttackingCastle && defenderId) {
+        // Kale saldırısı kazanıldı - HP azalt
+        setPlayers(prevPlayers => {
+          const newPlayers = prevPlayers.map(p => {
+            if (p.id === defenderId) {
+              const newHP = p.hp - 1;
+              const firstDamageTurn = p.castleFirstDamageTurn ?? turnNumber;
+
+              if (newHP <= 0) {
+                // Oyuncu elendi!
+                playerEliminated = { ...p, hp: 0, isAlive: false };
+                return { ...p, hp: 0, isAlive: false, castleFirstDamageTurn: firstDamageTurn };
+              }
+              return { ...p, hp: newHP, castleFirstDamageTurn: firstDamageTurn };
+            }
+            return p;
+          });
+
+          // Kazanan kontrolü - hayatta kalan oyuncu sayısı
+          const alivePlayers = newPlayers.filter(p => p.isActive && p.isAlive);
+          if (alivePlayers.length === 1) {
+            gameWinner = alivePlayers[0];
+          }
+
+          return newPlayers;
+        });
+
+        // Elenen oyuncunun tüm birimlerini ve kalesini sil
+        if (playerEliminated) {
+          setGrid(prevGrid => {
+            const newGrid = prevGrid.map(row => row.map(c => {
+              if (c.ownerId === defenderId) {
+                if (c.isCastle) {
+                  // Kaleyi saldırana ver
+                  return { ...c, ownerId: currentPlayer.id };
+                } else {
+                  // Birimleri sil
+                  return { ...c, type: 'empty' as const, ownerId: null };
+                }
+              }
+              return c;
+            }));
+            return newGrid;
+          });
+          setEliminatedPlayer(playerEliminated);
         }
       } else {
-        // Saldıran kaybetti veya berabere (berabere = savunan kazanır)
-        // Saldıranın birimi ölür
+        // Normal birim saldırısı - hücreyi al
+        setGrid(prevGrid => {
+          const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+          const defenderCell = newGrid[defenderPos.y][defenderPos.x];
+          defenderCell.ownerId = currentPlayer.id;
+          defenderCell.type = 'unit';
+          return newGrid;
+        });
+      }
+    } else {
+      // Saldıran kaybetti veya berabere (berabere = savunan kazanır)
+      // Saldıranın birimi ölür
+      setGrid(prevGrid => {
+        const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+        const attackerCell = newGrid[attackerPos.y][attackerPos.x];
         attackerCell.type = 'empty';
         attackerCell.ownerId = null;
-      }
+        return newGrid;
+      });
+    }
 
-      return newGrid;
-    });
+    // Oyun bitti mi kontrol et
+    if (gameWinner) {
+      setWinner(gameWinner);
+      setGamePhase('gameOver');
+      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
+      setShowCombatResult(false);
+      return;
+    }
 
     // Sonraki adım
     if (result === 'win') {
@@ -453,40 +529,69 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       if (selectedOption === 'B') {
         // Option B: 1 saldırı + genişleme
         setGamePhase('waiting');
-        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
       } else if (selectedOption === 'C' && remainingAttacks > 0) {
         // Option C: 2. saldırı hakkı
-        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: remainingAttacks });
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: remainingAttacks, isAttackingCastle: false, defenderId: null });
         setGamePhase('selectAttacker');
       } else {
         // Option C: saldırılar bitti, genişleme yok
         setGamePhase('turnComplete');
-        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
       }
     } else {
       // Kaybettiyse tur biter
       setGamePhase('turnComplete');
-      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
     }
 
     setShowCombatResult(false);
-  }, [combat, currentPlayer, selectedOption]);
+  }, [combat, currentPlayer, selectedOption, turnNumber]);
 
   // Turu bitir
   const handleEndTurn = useCallback(() => {
-    const nextIndex = (currentTurnIndex + 1) % turnOrder.length;
+    // Kale HP yenilenmesi kontrolü (her 3 turda bir, ilk hasar aldıktan sonra)
+    setPlayers(prevPlayers => {
+      return prevPlayers.map(p => {
+        if (p.isAlive && p.castleFirstDamageTurn !== null && p.hp < CASTLE_MAX_HP) {
+          const turnsSinceFirstDamage = turnNumber - p.castleFirstDamageTurn;
+          if (turnsSinceFirstDamage > 0 && turnsSinceFirstDamage % 3 === 0) {
+            return { ...p, hp: Math.min(p.hp + 1, CASTLE_MAX_HP) };
+          }
+        }
+        return p;
+      });
+    });
+
+    // Sonraki oyuncuyu bul (elenen oyuncuları atla)
+    let nextIndex = (currentTurnIndex + 1) % turnOrder.length;
+    let attempts = 0;
+    const alivePlayers = players.filter(p => p.isActive && p.isAlive);
+
+    while (attempts < turnOrder.length) {
+      const nextPlayer = activePlayers[turnOrder[nextIndex]];
+      if (nextPlayer && nextPlayer.isAlive) {
+        break;
+      }
+      nextIndex = (nextIndex + 1) % turnOrder.length;
+      attempts++;
+    }
+
     setCurrentTurnIndex(nextIndex);
 
     if (nextIndex === 0) {
       setTurnNumber(prev => prev + 1);
     }
 
+    // Elenen oyuncu bildirimini temizle
+    setEliminatedPlayer(null);
+
     setGamePhase('selectOption');
     setSelectedOption(null);
     setDiceResult(null);
     setRemainingPlacements(0);
-    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
-  }, [currentTurnIndex, turnOrder.length]);
+    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
+  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder]);
 
   // Hücreye tıklandığında
   const handleCellPress = useCallback((x: number, y: number) => {
@@ -505,7 +610,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     // Hedef seçimi
     if (gamePhase === 'selectTarget') {
       if (targetEnemies.has(cellKey)) {
-        setCombat(prev => ({ ...prev, defenderPos: { x, y } }));
+        const targetCell = grid[y][x];
+        const isAttackingCastle = targetCell.isCastle;
+        const defenderId = targetCell.ownerId;
+        setCombat(prev => ({ ...prev, defenderPos: { x, y }, isAttackingCastle, defenderId }));
         executeCombat();
       }
       return;
@@ -544,7 +652,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     } else if (gamePhase === 'selectAttacker') {
       setGamePhase('selectOption');
       setSelectedOption(null);
-      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
     }
   }, [gamePhase]);
 
@@ -719,9 +827,37 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     return null;
   };
 
+  // Zafer ekranı
+  const renderGameOver = () => {
+    if (gamePhase !== 'gameOver' || !winner) return null;
+
+    return (
+      <View style={styles.gameOverContainer}>
+        <Text style={styles.gameOverTitle}>🏆 OYUN BİTTİ!</Text>
+        <View style={[styles.winnerIndicator, { backgroundColor: winner.colorHex }]} />
+        <Text style={styles.winnerText}>{winner.color.toUpperCase()} KAZANDI!</Text>
+        <TouchableOpacity style={styles.restartButton} onPress={() => handlePlayerCountChange(playerCount)}>
+          <Text style={styles.restartButtonText}>Yeniden Başlat</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Elenen oyuncu bildirimi
+  const renderEliminatedNotification = () => {
+    if (!eliminatedPlayer) return null;
+
+    return (
+      <View style={styles.eliminatedContainer}>
+        <View style={[styles.eliminatedPlayerColor, { backgroundColor: eliminatedPlayer.colorHex }]} />
+        <Text style={styles.eliminatedText}>{eliminatedPlayer.color.toUpperCase()} ELENDİ!</Text>
+      </View>
+    );
+  };
+
   // Oyun kontrolleri
   const renderGameControls = () => {
-    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'selectOption') return null;
+    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'selectOption' || gamePhase === 'gameOver') return null;
     if (gamePhase === 'selectAttacker' || gamePhase === 'selectTarget' || gamePhase === 'combat') return renderCombatUI();
 
     return (
@@ -820,8 +956,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         {renderPlayerCountSelector()}
         {renderTurnOrderRoll()}
         {renderOptionMenu()}
+        {renderGameOver()}
+        {renderEliminatedNotification()}
         {renderGameControls()}
-        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
+        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
         <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           {renderGridContent()}
         </View>
@@ -855,8 +993,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       {renderPlayerCountSelector()}
       {renderTurnOrderRoll()}
       {renderOptionMenu()}
+      {renderGameOver()}
+      {renderEliminatedNotification()}
       {renderGameControls()}
-      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
+      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
@@ -936,6 +1076,17 @@ const styles = StyleSheet.create({
   gridContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   grid: { backgroundColor: GameColors.grid, borderWidth: 2, borderColor: GameColors.gridBorder, borderRadius: 4 },
   row: { flexDirection: 'row' },
+  // Oyun bitti stili
+  gameOverContainer: { backgroundColor: '#252540', padding: 24, alignItems: 'center', borderRadius: 12, margin: 12 },
+  gameOverTitle: { color: '#FFD700', fontSize: 24, fontWeight: '900', marginBottom: 16 },
+  winnerIndicator: { width: 60, height: 60, borderRadius: 30, borderWidth: 4, borderColor: '#fff', marginBottom: 12 },
+  winnerText: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 },
+  restartButton: { backgroundColor: '#4A90D9', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  restartButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  // Elenen oyuncu stili
+  eliminatedContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 107, 107, 0.3)', padding: 8, gap: 8 },
+  eliminatedPlayerColor: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff' },
+  eliminatedText: { color: '#FF6B6B', fontSize: 14, fontWeight: '700' },
 });
 
 export default GridBoard;
