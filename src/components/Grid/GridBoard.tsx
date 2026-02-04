@@ -10,7 +10,6 @@ import {
   StyleSheet,
   View,
   Dimensions,
-  ScrollView,
   Platform,
 } from 'react-native';
 import {
@@ -86,7 +85,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Test için: Hücreye tıklandığında rengini değiştir
   const handleCellPress = useCallback((x: number, y: number) => {
-    console.log(`Cell pressed: (${x}, ${y})`);
+    console.log(`GridBoard: Cell pressed at (${x}, ${y})`);
 
     // Izgara durumunu güncelle
     setGrid((prevGrid) => {
@@ -131,42 +130,48 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }
   };
 
-  // Grid render fonksiyonu (ortak)
-  const renderGrid = () => (
-    <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-      {grid.map((row, y) => (
-        <View key={`row-${y}`} style={styles.row}>
-          {row.map((cell, x) => (
-            <GridCell
-              key={`cell-${x}-${y}`}
-              x={x}
-              y={y}
-              size={cellSize}
-              type={cell.type}
-              ownerId={cell.ownerId}
-              ownerColor={getOwnerColor(cell.ownerId)}
-              isHighlighted={
-                highlightedCell?.x === x && highlightedCell?.y === y
-              }
-              onPress={handleCellPress}
-            />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-
-  // Web için basit div tabanlı görünüm
+  // Web için native HTML render
   if (Platform.OS === 'web') {
     return (
-      <View style={styles.container}>
-        <View style={styles.webScrollContainer}>
-          {renderGrid()}
-        </View>
-      </View>
+      <div style={{
+        flex: 1,
+        backgroundColor: '#1a1a2e',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 10,
+        overflow: 'auto',
+      }}>
+        <div style={{
+          backgroundColor: GameColors.grid,
+          border: `2px solid ${GameColors.gridBorder}`,
+          borderRadius: 4,
+        }}>
+          {grid.map((row, y) => (
+            <div key={`row-${y}`} style={{ display: 'flex', flexDirection: 'row' }}>
+              {row.map((cell, x) => (
+                <GridCell
+                  key={`cell-${x}-${y}`}
+                  x={x}
+                  y={y}
+                  size={cellSize}
+                  type={cell.type}
+                  ownerId={cell.ownerId}
+                  ownerColor={getOwnerColor(cell.ownerId)}
+                  isHighlighted={
+                    highlightedCell?.x === x && highlightedCell?.y === y
+                  }
+                  onPress={handleCellPress}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
+  // Mobil için React Native render
   // Pinch (yakınlaştırma) gesture
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
@@ -219,12 +224,31 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     ],
   }));
 
-  // Mobil için gesture destekli görünüm
   return (
     <GestureHandlerRootView style={styles.container}>
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
-          {renderGrid()}
+          <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
+            {grid.map((row, y) => (
+              <View key={`row-${y}`} style={styles.row}>
+                {row.map((cell, x) => (
+                  <GridCell
+                    key={`cell-${x}-${y}`}
+                    x={x}
+                    y={y}
+                    size={cellSize}
+                    type={cell.type}
+                    ownerId={cell.ownerId}
+                    ownerColor={getOwnerColor(cell.ownerId)}
+                    isHighlighted={
+                      highlightedCell?.x === x && highlightedCell?.y === y
+                    }
+                    onPress={handleCellPress}
+                  />
+                ))}
+              </View>
+            ))}
+          </View>
         </Animated.View>
       </GestureDetector>
     </GestureHandlerRootView>
@@ -237,12 +261,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  webScrollContainer: {
-    overflow: 'auto',
-    maxWidth: '100%',
-    maxHeight: '100%',
-    padding: 10,
   },
   gridContainer: {
     justifyContent: 'center',

@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { StyleSheet, Pressable, View, Platform } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { GameColors } from '../../../constants/Colors';
 import { CellType } from '../../types/game.types';
 
@@ -59,18 +59,99 @@ const GridCell: React.FC<GridCellProps> = ({
   // Arka plan rengi
   const backgroundColor = getCellBackgroundColor(type, ownerColor);
 
+  // Web için native div kullan
+  if (Platform.OS === 'web') {
+    return (
+      <div
+        onClick={handlePress}
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: backgroundColor,
+          borderWidth: isHighlighted ? 2 : 1,
+          borderStyle: 'solid',
+          borderColor: isHighlighted ? GameColors.highlight : GameColors.gridBorder,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          cursor: 'pointer',
+          boxSizing: 'border-box',
+          userSelect: 'none',
+        }}
+      >
+        {/* Birim göstergesi (X işareti) */}
+        {type === 'unit' && (
+          <div style={{
+            width: '60%',
+            height: '60%',
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+            <div style={{
+              position: 'absolute',
+              width: '100%',
+              height: 3,
+              backgroundColor: '#ffffff',
+              borderRadius: 2,
+              transform: 'rotate(45deg)',
+            }} />
+            <div style={{
+              position: 'absolute',
+              width: '100%',
+              height: 3,
+              backgroundColor: '#ffffff',
+              borderRadius: 2,
+              transform: 'rotate(-45deg)',
+            }} />
+          </div>
+        )}
+
+        {/* Kale göstergesi */}
+        {type === 'castle' && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            width: '70%',
+            height: '60%',
+          }}>
+            <div style={{ width: '25%', height: '100%', backgroundColor: '#ffffff', borderRadius: '2px 2px 0 0' }} />
+            <div style={{ width: '25%', height: '100%', backgroundColor: '#ffffff', borderRadius: '2px 2px 0 0' }} />
+            <div style={{ width: '25%', height: '100%', backgroundColor: '#ffffff', borderRadius: '2px 2px 0 0' }} />
+          </div>
+        )}
+
+        {/* Hazine sandığı göstergesi */}
+        {type === 'chest' && (
+          <div style={{
+            width: '50%',
+            height: '40%',
+            backgroundColor: '#8B4513',
+            borderRadius: 4,
+            border: '2px solid #FFD700',
+          }} />
+        )}
+      </div>
+    );
+  }
+
+  // Mobil için React Native View
   return (
-    <Pressable
-      onPress={handlePress}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.cell,
         {
           width: size,
           height: size,
-          backgroundColor: pressed ? '#5a5a7a' : backgroundColor,
+          backgroundColor,
         },
         isHighlighted && styles.highlighted,
       ]}
+      // @ts-ignore - onTouchEnd for mobile
+      onTouchEnd={handlePress}
     >
       {/* Birim göstergesi (X işareti) */}
       {type === 'unit' && (
@@ -93,7 +174,7 @@ const GridCell: React.FC<GridCellProps> = ({
       {type === 'chest' && (
         <View style={styles.chestMarker} />
       )}
-    </Pressable>
+    </View>
   );
 };
 
@@ -103,15 +184,12 @@ const styles = StyleSheet.create({
     borderColor: GameColors.gridBorder,
     justifyContent: 'center',
     alignItems: 'center',
-    // Web için cursor
-    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   highlighted: {
     borderWidth: 2,
     borderColor: GameColors.highlight,
     backgroundColor: 'rgba(144, 238, 144, 0.3)',
   },
-  // Birim (X) işareti stilleri
   unitMarker: {
     width: '60%',
     height: '60%',
@@ -131,7 +209,6 @@ const styles = StyleSheet.create({
   unitLine2: {
     transform: [{ rotate: '-45deg' }],
   },
-  // Kale işareti stilleri
   castleMarker: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -146,7 +223,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
   },
-  // Hazine sandığı stilleri
   chestMarker: {
     width: '50%',
     height: '40%',
@@ -157,5 +233,4 @@ const styles = StyleSheet.create({
   },
 });
 
-// Performance optimization: only re-render if props change
 export default memo(GridCell);
