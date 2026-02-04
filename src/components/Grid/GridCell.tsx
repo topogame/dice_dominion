@@ -1,11 +1,12 @@
 /**
  * Dice Dominion - Izgara Hücresi Bileşeni
- * Görsel Faz V1 Güncellemesi
+ * Görsel Faz V1 & V2 Güncellemesi
  *
  * Bu dosya tek bir ızgara hücresini render eder.
  * Hücre tıklanabilir ve farklı durumları görsel olarak gösterir.
  * Faz 3: Kale hücreleri kalın kenarlıkla gösterilir.
  * Görsel Faz V1: Ortaçağ temalı arazi dokuları ve animasyonlar eklendi.
+ * Görsel Faz V2: Kale görselleri, hasar durumları, bayrak animasyonu.
  *
  * PLACEHOLDER: Gradyan dolgular gerçek piksel sanat varlıkları ile değiştirilecek.
  */
@@ -260,6 +261,302 @@ const MountainRocks: React.FC<{ x: number; y: number; size: number }> = memo(({ 
   );
 });
 
+// ============================================
+// Görsel Faz V2: Kale Bileşenleri
+// ============================================
+
+// Dalgalanan bayrak animasyonu
+// PLACEHOLDER: Gerçek bayrak sprite'ı ile değiştirilecek
+const AnimatedFlag: React.FC<{ color: string; size: number }> = memo(({ color, size }) => {
+  const waveAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(waveAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(waveAnim, {
+          toValue: 0,
+          duration: 800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [waveAnim]);
+
+  const flagWave = waveAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['-5deg', '5deg'],
+  });
+
+  const flagWidth = waveAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [size * 0.3, size * 0.35, size * 0.3],
+  });
+
+  return (
+    <View style={[styles.flagPole, { height: size * 0.4 }]}>
+      <Animated.View
+        style={[
+          styles.flag,
+          {
+            backgroundColor: color,
+            width: flagWidth,
+            height: size * 0.15,
+            transform: [{ rotate: flagWave }],
+          },
+        ]}
+      />
+    </View>
+  );
+});
+
+// Duman animasyonu (hasar için)
+// PLACEHOLDER: Gerçek duman sprite'ı ile değiştirilecek
+const SmokeEffect: React.FC<{ intensity: number; size: number }> = memo(({ intensity, size }) => {
+  const smokeOpacity = useRef(new Animated.Value(0)).current;
+  const smokeTranslate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(smokeOpacity, {
+            toValue: 0.3 * intensity,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(smokeOpacity, {
+            toValue: 0.1 * intensity,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(smokeTranslate, {
+            toValue: -5,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(smokeTranslate, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [smokeOpacity, smokeTranslate, intensity]);
+
+  if (intensity === 0) return null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.smoke,
+        {
+          width: size * 0.3,
+          height: size * 0.3,
+          opacity: smokeOpacity,
+          transform: [{ translateY: smokeTranslate }],
+        },
+      ]}
+    />
+  );
+});
+
+// Ateş animasyonu (ağır hasar için)
+// PLACEHOLDER: Gerçek ateş sprite'ı ile değiştirilecek
+const FireEffect: React.FC<{ size: number }> = memo(({ size }) => {
+  const fireScale = useRef(new Animated.Value(0.8)).current;
+  const fireOpacity = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(fireScale, {
+            toValue: 1.1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(fireScale, {
+            toValue: 0.8,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(fireOpacity, {
+            toValue: 1,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+          Animated.timing(fireOpacity, {
+            toValue: 0.7,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [fireScale, fireOpacity]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.fire,
+        {
+          width: size * 0.25,
+          height: size * 0.3,
+          opacity: fireOpacity,
+          transform: [{ scale: fireScale }],
+        },
+      ]}
+    />
+  );
+});
+
+// Gelişmiş kale görseli (hasar durumları ile)
+// PLACEHOLDER: Gerçek kale sprite'ı ile değiştirilecek
+const CastleVisual: React.FC<{
+  size: number;
+  ownerColor: string;
+  hp: number;
+  maxHP?: number;
+}> = memo(({ size, ownerColor, hp, maxHP = 4 }) => {
+  // Hasar seviyesi hesapla (0 = sağlam, 3 = yıkık)
+  const damageLevel = maxHP - hp;
+
+  // Kale duvar rengi (hasara göre koyulaşır)
+  const wallColor = damageLevel >= 3 ? '#4a4a4a' : damageLevel >= 2 ? '#6a6a6a' : '#8a8a8a';
+
+  return (
+    <View style={[styles.castleContainer, { width: size * 0.85, height: size * 0.75 }]}>
+      {/* Ana kale yapısı */}
+      <View style={styles.castleStructure}>
+        {/* Sol kule */}
+        <View style={[styles.castleTowerV2, { backgroundColor: wallColor }]}>
+          <View style={[styles.towerTop, { backgroundColor: ownerColor }]} />
+          {/* Çatlaklar (hasar 2+) */}
+          {damageLevel >= 2 && <View style={styles.crack1} />}
+        </View>
+
+        {/* Orta bölüm (ana duvar) */}
+        <View style={[styles.castleMain, { backgroundColor: wallColor }]}>
+          {/* Kapı */}
+          <View style={styles.castleGate} />
+          {/* Çatlaklar (hasar 1+) */}
+          {damageLevel >= 1 && <View style={styles.crack2} />}
+          {damageLevel >= 3 && <View style={styles.crack3} />}
+        </View>
+
+        {/* Sağ kule */}
+        <View style={[styles.castleTowerV2, { backgroundColor: wallColor }]}>
+          <View style={[styles.towerTop, { backgroundColor: ownerColor }]} />
+          {/* Çatlaklar (hasar 3) */}
+          {damageLevel >= 3 && <View style={styles.crack1} />}
+        </View>
+      </View>
+
+      {/* Bayrak (en üstte) */}
+      <View style={styles.flagContainer}>
+        <AnimatedFlag color={ownerColor} size={size} />
+      </View>
+
+      {/* Duman efekti (hasar 1+) */}
+      {damageLevel >= 1 && (
+        <View style={styles.smokeContainer}>
+          <SmokeEffect intensity={damageLevel} size={size} />
+        </View>
+      )}
+
+      {/* Ateş efekti (hasar 3 = 1 HP kaldı) */}
+      {damageLevel >= 3 && (
+        <View style={styles.fireContainer}>
+          <FireEffect size={size} />
+        </View>
+      )}
+    </View>
+  );
+});
+
+// Kalp HP göstergesi
+// PLACEHOLDER: Gerçek kalp ikonları ile değiştirilecek
+const HeartHP: React.FC<{ current: number; max: number; size: number }> = memo(({ current, max, size }) => {
+  const hearts: React.ReactNode[] = [];
+  const heartSize = size * 0.18;
+
+  for (let i = 0; i < max; i++) {
+    const isFull = i < current;
+    hearts.push(
+      <View
+        key={`heart-${i}`}
+        style={[
+          styles.heart,
+          {
+            width: heartSize,
+            height: heartSize * 0.9,
+            backgroundColor: isFull ? '#FF4444' : 'transparent',
+            borderColor: isFull ? '#CC0000' : '#666666',
+          },
+        ]}
+      />
+    );
+  }
+
+  return <View style={styles.heartsContainer}>{hearts}</View>;
+});
+
+// Kale yenilenme parıltısı
+// PLACEHOLDER: Gerçek parıltı efekti ile değiştirilecek
+const RegenGlow: React.FC<{ size: number; active: boolean }> = memo(({ size, active }) => {
+  const glowOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (active) {
+      Animated.sequence([
+        Animated.timing(glowOpacity, {
+          toValue: 0.6,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowOpacity, {
+          toValue: 0,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [active, glowOpacity]);
+
+  if (!active) return null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.regenGlow,
+        {
+          width: size,
+          height: size,
+          opacity: glowOpacity,
+        },
+      ]}
+    />
+  );
+});
+
 const GridCell: React.FC<GridCellProps> = ({
   x,
   y,
@@ -360,12 +657,18 @@ const GridCell: React.FC<GridCellProps> = ({
         </View>
       )}
 
-      {/* Kale göstergesi (kule ikonu) */}
-      {isCastle && (
-        <View style={styles.castleMarker}>
-          <View style={styles.castleTower} />
-          <View style={[styles.castleTower, styles.castleTowerMiddle]} />
-          <View style={styles.castleTower} />
+      {/* Kale göstergesi - Görsel Faz V2 geliştirilmiş */}
+      {isCastle && ownerColor && (
+        <View style={styles.castleWrapper}>
+          {/* Gelişmiş kale görseli */}
+          <CastleVisual
+            size={size}
+            ownerColor={ownerColor}
+            hp={castleHP ?? 4}
+            maxHP={4}
+          />
+          {/* Kalp HP göstergesi */}
+          <HeartHP current={castleHP ?? 4} max={4} size={size} />
         </View>
       )}
 
@@ -633,6 +936,145 @@ const styles = StyleSheet.create({
     height: 8,
     backgroundColor: '#FFD700',
     borderRadius: 4,
+  },
+  // ============================================
+  // Görsel Faz V2: Kale Stilleri
+  // ============================================
+  castleWrapper: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  castleContainer: {
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  castleStructure: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    width: '100%',
+    height: '70%',
+  },
+  castleTowerV2: {
+    width: '28%',
+    height: '80%',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  towerTop: {
+    width: '100%',
+    height: '25%',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+  },
+  castleMain: {
+    width: '40%',
+    height: '65%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginHorizontal: 1,
+    overflow: 'hidden',
+  },
+  castleGate: {
+    width: '50%',
+    height: '50%',
+    backgroundColor: '#3a3a3a',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    marginBottom: -1,
+  },
+  // Çatlak efektleri
+  crack1: {
+    position: 'absolute',
+    width: 2,
+    height: '40%',
+    backgroundColor: '#2a2a2a',
+    top: '30%',
+    left: '30%',
+    transform: [{ rotate: '15deg' }],
+  },
+  crack2: {
+    position: 'absolute',
+    width: 2,
+    height: '30%',
+    backgroundColor: '#2a2a2a',
+    top: '20%',
+    right: '25%',
+    transform: [{ rotate: '-20deg' }],
+  },
+  crack3: {
+    position: 'absolute',
+    width: 3,
+    height: '50%',
+    backgroundColor: '#1a1a1a',
+    top: '10%',
+    left: '40%',
+    transform: [{ rotate: '5deg' }],
+  },
+  // Bayrak stilleri
+  flagContainer: {
+    position: 'absolute',
+    top: 0,
+    alignItems: 'center',
+  },
+  flagPole: {
+    width: 2,
+    backgroundColor: '#4a4a4a',
+    alignItems: 'flex-start',
+  },
+  flag: {
+    position: 'absolute',
+    top: 0,
+    left: 2,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  // Duman efekti
+  smokeContainer: {
+    position: 'absolute',
+    top: '10%',
+    right: '10%',
+  },
+  smoke: {
+    backgroundColor: 'rgba(100, 100, 100, 0.5)',
+    borderRadius: 50,
+  },
+  // Ateş efekti
+  fireContainer: {
+    position: 'absolute',
+    bottom: '30%',
+    left: '15%',
+  },
+  fire: {
+    backgroundColor: '#FF6600',
+    borderRadius: 50,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
+  // Kalp HP göstergesi
+  heartsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: 1,
+  },
+  heart: {
+    borderWidth: 1,
+    borderRadius: 2,
+    // Kalp şekli için özel stil (basitleştirilmiş kare)
+    transform: [{ rotate: '45deg' }],
+  },
+  // Yenilenme parıltısı
+  regenGlow: {
+    position: 'absolute',
+    backgroundColor: '#FFD700',
+    borderRadius: 50,
   },
 });
 
