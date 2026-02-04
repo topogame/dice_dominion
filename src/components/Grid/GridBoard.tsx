@@ -9,9 +9,10 @@
  * Faz 8: Bonus sandık sistemi - sandık toplama ve bonus efektleri.
  * Faz 9: Arazi haritaları - Nehir ve Dağ haritaları, köprüler ve geçitler.
  * Faz 10: İsyancı istilası - AI kontrollü isyancı birimleri.
+ * Faz 11: Tur zamanlayıcısı ve UI geliştirmeleri.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -528,6 +529,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const [isRebelTurn, setIsRebelTurn] = useState(false);
   const [rebelCombatLog, setRebelCombatLog] = useState<string | null>(null);
 
+  // Tur zamanlayıcısı
+  const [turnTimerSetting, setTurnTimerSetting] = useState<10 | 15>(15);  // 10 veya 15 saniye
+  const [turnTimeRemaining, setTurnTimeRemaining] = useState<number>(15);
+  const [isTimerWarning, setIsTimerWarning] = useState(false);
+  const turnTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Oyun durumu
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
   const [turnOrder, setTurnOrder] = useState<number[]>([]);
@@ -608,6 +615,58 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     ],
   }));
 
+  // Tur zamanlayıcısı efekti
+  useEffect(() => {
+    // Sadece aktif oyun fazlarında zamanlayıcıyı çalıştır
+    const activePhases: GamePhase[] = ['selectOption', 'waiting', 'rolling', 'placing', 'selectAttacker', 'selectTarget'];
+
+    if (activePhases.includes(gamePhase) && !isRebelTurn && !showCombatResult) {
+      // Zamanlayıcıyı başlat
+      if (turnTimerRef.current) {
+        clearInterval(turnTimerRef.current);
+      }
+
+      turnTimerRef.current = setInterval(() => {
+        setTurnTimeRemaining(prev => {
+          if (prev <= 1) {
+            // Süre doldu - turu atla
+            if (turnTimerRef.current) {
+              clearInterval(turnTimerRef.current);
+            }
+            setIsTimerWarning(true);
+
+            // 1.5 saniye uyarı göster, sonra turu bitir
+            setTimeout(() => {
+              setIsTimerWarning(false);
+              setGamePhase('turnComplete');
+            }, 1500);
+
+            return 0;
+          }
+
+          // Son 5 saniyede uyarı
+          if (prev <= 6) {
+            setIsTimerWarning(true);
+          }
+
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      // Zamanlayıcıyı durdur
+      if (turnTimerRef.current) {
+        clearInterval(turnTimerRef.current);
+        turnTimerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (turnTimerRef.current) {
+        clearInterval(turnTimerRef.current);
+      }
+    };
+  }, [gamePhase, isRebelTurn, showCombatResult]);
+
   // Oyunu sıfırla (oyuncu sayısı veya harita türü değiştiğinde)
   const resetGame = useCallback((count: number, map: MapType) => {
     const newPlayers = createPlayers(count);
@@ -633,7 +692,13 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setRebelSpawnCountdown(REBEL_SPAWN_INTERVAL);
     setIsRebelTurn(false);
     setRebelCombatLog(null);
-  }, []);
+    setTurnTimeRemaining(turnTimerSetting);
+    setIsTimerWarning(false);
+    if (turnTimerRef.current) {
+      clearInterval(turnTimerRef.current);
+      turnTimerRef.current = null;
+    }
+  }, [turnTimerSetting]);
 
   // Oyuncu sayısı değiştiğinde
   const handlePlayerCountChange = useCallback((count: number) => {
@@ -1164,12 +1229,16 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       }, 500);
     }
 
+    // Zamanlayıcıyı sıfırla
+    setTurnTimeRemaining(turnTimerSetting);
+    setIsTimerWarning(false);
+
     setGamePhase('selectOption');
     setSelectedOption(null);
     setDiceResult(null);
     setRemainingPlacements(0);
     setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0, isAttackingCastle: false, defenderId: null });
-  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer, rebels, rebelSpawnCountdown, executeRebelTurn]);
+  }, [currentTurnIndex, turnOrder.length, turnNumber, players, activePlayers, turnOrder, chests, grid, currentPlayer, rebels, rebelSpawnCountdown, executeRebelTurn, turnTimerSetting]);
 
   // Köprü inşa etmeyi başlat
   const handleStartBuildBridge = useCallback(() => {
@@ -1330,7 +1399,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     mountain: 'Dağ',
   };
 
-  // Oyuncu sayısı ve harita türü seçici
+  // Oyuncu sayısı, harita türü ve zamanlayıcı seçici
   const renderPlayerCountSelector = () => (
     <View style={styles.selectorContainer}>
       <Text style={styles.selectorLabel}>Oyuncu:</Text>
@@ -1356,6 +1425,22 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
             disabled={gamePhase !== 'setup'}
           >
             <Text style={[styles.selectorButtonText, mapType === map && styles.selectorButtonTextActive]}>{mapTypeLabels[map]}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.selectorLabel}>Süre:</Text>
+      <View style={styles.selectorButtons}>
+        {([10, 15] as const).map(seconds => (
+          <TouchableOpacity
+            key={seconds}
+            style={[styles.selectorButton, turnTimerSetting === seconds && styles.selectorButtonActive]}
+            onPress={() => {
+              setTurnTimerSetting(seconds);
+              setTurnTimeRemaining(seconds);
+            }}
+            disabled={gamePhase !== 'setup'}
+          >
+            <Text style={[styles.selectorButtonText, turnTimerSetting === seconds && styles.selectorButtonTextActive]}>{seconds}s</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -1502,13 +1587,40 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const renderGameOver = () => {
     if (gamePhase !== 'gameOver' || !winner) return null;
 
+    // Kazananın birim sayısını hesapla
+    let winnerUnitCount = 0;
+    for (let y = 0; y < GRID_HEIGHT; y++) {
+      for (let x = 0; x < GRID_WIDTH; x++) {
+        if (grid[y][x].ownerId === winner.id && grid[y][x].type === 'unit') {
+          winnerUnitCount++;
+        }
+      }
+    }
+
     return (
       <View style={styles.gameOverContainer}>
         <Text style={styles.gameOverTitle}>🏆 OYUN BİTTİ!</Text>
         <View style={[styles.winnerIndicator, { backgroundColor: winner.colorHex }]} />
         <Text style={styles.winnerText}>{winner.color.toUpperCase()} KAZANDI!</Text>
+
+        {/* Oyun istatistikleri */}
+        <View style={styles.gameStatsContainer}>
+          <View style={styles.gameStatItem}>
+            <Text style={styles.gameStatLabel}>Toplam Tur</Text>
+            <Text style={styles.gameStatValue}>{turnNumber}</Text>
+          </View>
+          <View style={styles.gameStatItem}>
+            <Text style={styles.gameStatLabel}>Kalan Birimler</Text>
+            <Text style={styles.gameStatValue}>{winnerUnitCount}</Text>
+          </View>
+          <View style={styles.gameStatItem}>
+            <Text style={styles.gameStatLabel}>Kale HP</Text>
+            <Text style={styles.gameStatValue}>{winner.hp}/4</Text>
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.restartButton} onPress={() => handlePlayerCountChange(playerCount)}>
-          <Text style={styles.restartButtonText}>Yeniden Başlat</Text>
+          <Text style={styles.restartButtonText}>🔄 Yeniden Başlat</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1581,6 +1693,20 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   };
 
+  // Zamanlayıcı uyarısı
+  const renderTimerWarning = () => {
+    if (!isTimerWarning || gamePhase === 'turnComplete' || gamePhase === 'gameOver') return null;
+
+    return (
+      <View style={styles.timerWarningContainer}>
+        <Text style={styles.timerWarningIcon}>⏰</Text>
+        <Text style={styles.timerWarningText}>
+          {turnTimeRemaining === 0 ? 'SÜRE DOLDU!' : `Süre azalıyor! ${turnTimeRemaining}s`}
+        </Text>
+      </View>
+    );
+  };
+
   // Oyun kontrolleri
   const renderGameControls = () => {
     if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'selectOption' || gamePhase === 'gameOver') return null;
@@ -1593,6 +1719,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
           <View style={styles.currentPlayerInfo}>
             <View style={[styles.playerColorIndicator, { backgroundColor: currentPlayer?.colorHex }]} />
             <Text style={styles.currentPlayerText}>{selectedOption && `[${selectedOption}]`}</Text>
+          </View>
+          {/* Zamanlayıcı */}
+          <View style={[styles.timerContainer, isTimerWarning && styles.timerContainerWarning]}>
+            <Text style={[styles.timerText, isTimerWarning && styles.timerTextWarning]}>
+              ⏱️ {turnTimeRemaining}s
+            </Text>
           </View>
         </View>
         <View style={styles.diceContainer}>
@@ -1729,6 +1861,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         {renderEliminatedNotification()}
         {renderBonusCollectedNotification()}
         {renderRebelTurnIndicator()}
+        {renderTimerWarning()}
         {renderGameControls()}
         {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
         {renderRebelInfo()}
@@ -1769,6 +1902,7 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       {renderEliminatedNotification()}
       {renderBonusCollectedNotification()}
       {renderRebelTurnIndicator()}
+      {renderTimerWarning()}
       {renderGameControls()}
       {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'gameOver' && renderHPIndicators()}
       {renderRebelInfo()}
@@ -1856,7 +1990,11 @@ const styles = StyleSheet.create({
   gameOverContainer: { backgroundColor: '#252540', padding: 24, alignItems: 'center', borderRadius: 12, margin: 12 },
   gameOverTitle: { color: '#FFD700', fontSize: 24, fontWeight: '900', marginBottom: 16 },
   winnerIndicator: { width: 60, height: 60, borderRadius: 30, borderWidth: 4, borderColor: '#fff', marginBottom: 12 },
-  winnerText: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 },
+  winnerText: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 12 },
+  gameStatsContainer: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' },
+  gameStatItem: { alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  gameStatLabel: { color: '#888', fontSize: 10, fontWeight: '600', marginBottom: 4 },
+  gameStatValue: { color: '#fff', fontSize: 18, fontWeight: '900' },
   restartButton: { backgroundColor: '#4A90D9', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
   restartButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   // Elenen oyuncu stili
@@ -1894,6 +2032,14 @@ const styles = StyleSheet.create({
   rebelTurnIcon: { fontSize: 28 },
   rebelTurnText: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 },
   rebelCombatLog: { color: '#ddd', fontSize: 12, marginTop: 6, textAlign: 'center' },
+  // Zamanlayıcı stilleri
+  timerContainer: { backgroundColor: 'rgba(74, 144, 217, 0.3)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginLeft: 10 },
+  timerContainerWarning: { backgroundColor: 'rgba(255, 107, 107, 0.4)', borderWidth: 1, borderColor: '#FF6B6B' },
+  timerText: { color: '#4A90D9', fontSize: 12, fontWeight: '700' },
+  timerTextWarning: { color: '#FF6B6B' },
+  timerWarningContainer: { backgroundColor: 'rgba(255, 107, 107, 0.5)', padding: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, borderBottomWidth: 2, borderBottomColor: '#FF6B6B' },
+  timerWarningIcon: { fontSize: 20 },
+  timerWarningText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
 export default GridBoard;
