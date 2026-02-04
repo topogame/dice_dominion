@@ -453,6 +453,15 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const gridTotalWidth = CELL_SIZE * GRID_WIDTH;
   const gridTotalHeight = CELL_SIZE * GRID_HEIGHT;
 
+  // Animasyon stili (hook, platform check'ten ÖNCE çağrılmalı)
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
   // Oyunu sıfırla (oyuncu sayısı veya harita türü değiştiğinde)
   const resetGame = useCallback((count: number, map: MapType) => {
     const newPlayers = createPlayers(count);
@@ -1369,7 +1378,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     });
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }] }));
 
   return (
     <GestureHandlerRootView style={styles.container}>
