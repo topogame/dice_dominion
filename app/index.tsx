@@ -421,10 +421,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: MedievalTheme.cream,
-    letterSpacing: 3,
-    marginTop: 20,
+    letterSpacing: 6,
+    marginTop: 30,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 4,
