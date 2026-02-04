@@ -35,8 +35,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import GridCell from './GridCell';
 import MapBackground from './MapBackground';
+import IsometricGrid from './IsometricGrid';
 import { GridCell as GridCellType, PlayerColor } from '../../types/game.types';
 import { GameColors, PlayerColors, TerrainColors } from '../../../constants/Colors';
+import { getIsoMapDimensions, ISO_TILE_WIDTH, ISO_TILE_HEIGHT } from '../../utils/isometric';
 
 // Izgara sabitleri
 const GRID_WIDTH = 24;
@@ -605,8 +607,10 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
 
-  const gridTotalWidth = CELL_SIZE * GRID_WIDTH;
-  const gridTotalHeight = CELL_SIZE * GRID_HEIGHT;
+  // İzometrik harita boyutları
+  const isoMapDimensions = useMemo(() => getIsoMapDimensions(), []);
+  const gridTotalWidth = isoMapDimensions.width + 100;  // Ekstra padding
+  const gridTotalHeight = isoMapDimensions.height + 150;  // Ekstra padding
 
   // Animasyon stili (hook, platform check'ten ÖNCE çağrılmalı)
   const animatedStyle = useAnimatedStyle(() => ({
@@ -1816,42 +1820,19 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   };
 
-  // Grid içeriği - Görsel Faz V1: MapBackground ile sarılmış
+  // Grid içeriği - Görsel Faz V1-ISO: İzometrik görünüm
   const renderGridContent = () => (
-    <MapBackground mapType={mapType} width={gridTotalWidth} height={gridTotalHeight}>
-      <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-        {grid.map((row, y) => (
-          <View key={`row-${y}`} style={styles.row}>
-            {row.map((cell, x) => {
-              const cellKey = `${x},${y}`;
-              const isValidPlacement = validPlacementCells.has(cellKey);
-              const isAttacker = attackerUnits.has(cellKey);
-              const isTarget = targetEnemies.has(cellKey);
-              const isSelectedAttacker = combat.attackerPos?.x === x && combat.attackerPos?.y === y;
-
-              return (
-                <GridCell
-                  key={`cell-${x}-${y}`}
-                  x={x}
-                  y={y}
-                  size={CELL_SIZE}
-                  type={cell.type}
-                  ownerId={cell.ownerId}
-                  ownerColor={getOwnerColor(cell.ownerId)}
-                  isCastle={cell.isCastle}
-                  castleHP={cell.isCastle ? getCastleHP(cell.ownerId) : null}
-                  isHighlighted={isValidPlacement}
-                  isValidPlacement={isValidPlacement}
-                  isAttacker={isAttacker || isSelectedAttacker}
-                  isTarget={isTarget}
-                  onPress={handleCellPress}
-                />
-              );
-            })}
-          </View>
-        ))}
-      </View>
-    </MapBackground>
+    <IsometricGrid
+      grid={grid}
+      mapType={mapType}
+      validPlacementCells={validPlacementCells}
+      attackerUnits={attackerUnits}
+      targetEnemies={targetEnemies}
+      selectedAttacker={combat.attackerPos}
+      onCellPress={handleCellPress}
+      getOwnerColor={getOwnerColor}
+      getCastleHP={getCastleHP}
+    />
   );
 
   // Web için
