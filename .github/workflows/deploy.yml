@@ -40,13 +40,19 @@ jobs:
       - name: Build web export
         run: npx expo export --platform web
 
-      - name: Fix routing for GitHub Pages
+      - name: Fix asset paths for GitHub Pages subdirectory
         run: |
-          # Create folder structure for clean URLs
+          # Fix JS/CSS paths in all HTML files (change /_expo to ./_expo)
+          find dist -name "*.html" -exec sed -i 's|"/_expo|"./_expo|g' {} \;
+          find dist -name "*.html" -exec sed -i "s|'/_expo|'./_expo|g" {} \;
+          # Fix favicon path
+          find dist -name "*.html" -exec sed -i 's|"/favicon|"./favicon|g' {} \;
+          # Create game folder for clean URLs
           mkdir -p dist/game
           cp dist/game.html dist/game/index.html
           # Copy 404.html for fallback
           cp dist/index.html dist/404.html
+          echo "Fixed paths in HTML files"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
