@@ -604,11 +604,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   const gridTotalWidth = isoMapDimensions.width + 100;  // Ekstra padding
   const gridTotalHeight = isoMapDimensions.height + 150;  // Ekstra padding
 
-  // Calculate initial scale to fit the entire map on screen
+  // Calculate initial scale to fill entire screen with tiles
   const initialScale = useMemo(() => {
     const scaleX = screenWidth / gridTotalWidth;
-    const scaleY = (screenHeight - 180) / gridTotalHeight; // Account for HUD (header + footer ~180px)
-    return Math.min(Math.max(scaleX, scaleY, 0.5), 1.0); // Fit map but not too zoomed out
+    const scaleY = screenHeight / gridTotalHeight;
+    // Use larger scale to fill screen with tiles
+    return Math.max(scaleX, scaleY, 0.6);
   }, [gridTotalWidth, gridTotalHeight]);
 
   // Zoom ve pan için animated değerler (start with calculated initial scale)
