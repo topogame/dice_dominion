@@ -40,6 +40,14 @@ jobs:
       - name: Build web export
         run: npx expo export --platform web
 
+      - name: Fix routing for GitHub Pages
+        run: |
+          # Create folder structure for clean URLs
+          mkdir -p dist/game
+          cp dist/game.html dist/game/index.html
+          # Copy 404.html for fallback
+          cp dist/index.html dist/404.html
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
         with:
