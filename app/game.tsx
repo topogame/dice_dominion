@@ -2,14 +2,14 @@
  * Dice Dominion - Oyun Ekranı
  *
  * Bu dosya ana oyun ekranını içerir.
- * Oyun haritası ve tüm oyun mekanikleri burada gösterilecek.
+ * Oyun haritası (ızgara) ve tüm oyun mekanikleri burada gösterilir.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { GridBoard } from '../src/components/Grid';
 
 export default function GameScreen() {
   // Güvenli alan kenar boşlukları
@@ -18,39 +18,41 @@ export default function GameScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  // Son tıklanan hücre bilgisi
+  const [lastTappedCell, setLastTappedCell] = useState<{ x: number; y: number } | null>(null);
+
+  // Hücre tıklama olayı
+  const handleCellPress = (x: number, y: number) => {
+    setLastTappedCell({ x, y });
+  };
+
   return (
     <View style={[styles.container, isDark ? styles.containerDark : styles.containerLight]}>
-      {/* Oyun alanı placeholder */}
-      <View style={styles.content}>
-        {/* Zar ikonu */}
-        <View style={[styles.iconContainer, isDark && styles.iconContainerDark]}>
-          <FontAwesome name="cube" size={80} color={isDark ? '#6BA3E0' : '#4A90D9'} />
-        </View>
-
-        {/* Başlık */}
-        <Text style={[styles.title, isDark && styles.titleDark]}>
-          Oyun Burada Başlayacak
+      {/* Üst bilgi çubuğu */}
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 10 }]}>
+        <Text style={[styles.headerText, isDark && styles.headerTextDark]}>
+          Dice Dominion
         </Text>
-
-        {/* Açıklama */}
-        <Text style={[styles.description, isDark && styles.descriptionDark]}>
-          Izgara haritası, kaleler ve birimler{'\n'}
-          sonraki aşamada eklenecek.
-        </Text>
-
-        {/* Bilgi kutusu */}
-        <View style={[styles.infoBox, isDark && styles.infoBoxDark]}>
-          <FontAwesome
-            name="info-circle"
-            size={20}
-            color={isDark ? '#6BA3E0' : '#4A90D9'}
-            style={styles.infoIcon}
-          />
-          <Text style={[styles.infoText, isDark && styles.infoTextDark]}>
-            Faz 1 tamamlandı!{'\n'}
-            Navigasyon sistemi çalışıyor.
+        {lastTappedCell && (
+          <Text style={[styles.cellInfo, isDark && styles.cellInfoDark]}>
+            Son tıklanan: ({lastTappedCell.x}, {lastTappedCell.y})
           </Text>
-        </View>
+        )}
+      </View>
+
+      {/* Izgara tahtası */}
+      <View style={styles.gridWrapper}>
+        <GridBoard onCellPress={handleCellPress} />
+      </View>
+
+      {/* Alt bilgi çubuğu */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
+        <Text style={[styles.footerText, isDark && styles.footerTextDark]}>
+          Hücreye dokunarak birim yerleştirin
+        </Text>
+        <Text style={[styles.footerHint, isDark && styles.footerHintDark]}>
+          📱 Mobil: İki parmakla yakınlaştır, sürükleyerek kaydır
+        </Text>
       </View>
     </View>
   );
@@ -66,71 +68,55 @@ const styles = StyleSheet.create({
   containerDark: {
     backgroundColor: '#1a1a2e',
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 30,
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  iconContainer: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(74, 144, 217, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 30,
-    borderWidth: 3,
-    borderColor: 'rgba(74, 144, 217, 0.2)',
-    borderStyle: 'dashed',
-  },
-  iconContainerDark: {
-    backgroundColor: 'rgba(107, 163, 224, 0.1)',
-    borderColor: 'rgba(107, 163, 224, 0.2)',
-  },
-  title: {
-    fontSize: 24,
+  headerText: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#1a1a2e',
     textAlign: 'center',
-    marginBottom: 12,
   },
-  titleDark: {
+  headerTextDark: {
     color: '#f0f0f5',
   },
-  description: {
-    fontSize: 16,
+  cellInfo: {
+    fontSize: 12,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 40,
+    marginTop: 4,
   },
-  descriptionDark: {
+  cellInfoDark: {
     color: '#888',
   },
-  infoBox: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(74, 144, 217, 0.1)',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(74, 144, 217, 0.2)',
-    alignItems: 'center',
+  gridWrapper: {
+    flex: 1,
+    overflow: 'hidden',
   },
-  infoBoxDark: {
-    backgroundColor: 'rgba(107, 163, 224, 0.1)',
-    borderColor: 'rgba(107, 163, 224, 0.2)',
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
   },
-  infoIcon: {
-    marginRight: 12,
-  },
-  infoText: {
+  footerText: {
     fontSize: 14,
-    color: '#4A90D9',
-    lineHeight: 20,
+    color: '#1a1a2e',
+    textAlign: 'center',
   },
-  infoTextDark: {
-    color: '#6BA3E0',
+  footerTextDark: {
+    color: '#f0f0f5',
+  },
+  footerHint: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  footerHintDark: {
+    color: '#888',
   },
 });
