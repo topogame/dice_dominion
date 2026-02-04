@@ -599,18 +599,25 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     return findTargetEnemies(grid, combat.attackerPos.x, combat.attackerPos.y, currentPlayer.id);
   }, [grid, gamePhase, combat.attackerPos, currentPlayer]);
 
-  // Zoom ve pan için animated değerler
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const savedTranslateX = useSharedValue(0);
-  const savedTranslateY = useSharedValue(0);
-
   // İzometrik harita boyutları
   const isoMapDimensions = useMemo(() => getIsoMapDimensions(), []);
   const gridTotalWidth = isoMapDimensions.width + 100;  // Ekstra padding
   const gridTotalHeight = isoMapDimensions.height + 150;  // Ekstra padding
+
+  // Calculate initial scale to fit the entire map on screen
+  const initialScale = useMemo(() => {
+    const scaleX = screenWidth / gridTotalWidth;
+    const scaleY = (screenHeight - 180) / gridTotalHeight; // Account for HUD (header + footer ~180px)
+    return Math.min(Math.max(scaleX, scaleY, 0.5), 1.0); // Fit map but not too zoomed out
+  }, [gridTotalWidth, gridTotalHeight]);
+
+  // Zoom ve pan için animated değerler (start with calculated initial scale)
+  const scale = useSharedValue(initialScale);
+  const savedScale = useSharedValue(initialScale);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
 
   // Animasyon stili (hook, platform check'ten ÖNCE çağrılmalı)
   const animatedStyle = useAnimatedStyle(() => ({
@@ -1858,18 +1865,23 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   }
 
-  // Mobil için
+  // Mobil için - pinch to zoom with bounds
+  const minScale = Math.max(initialScale * 0.8, 0.4); // Don't zoom out too much
   const pinchGesture = Gesture.Pinch()
     .onStart(() => { savedScale.value = scale.value; })
-    .onUpdate(event => { scale.value = Math.min(Math.max(savedScale.value * event.scale, 0.5), 3); })
-    .onEnd(() => { if (scale.value < 0.8) scale.value = withSpring(0.8); });
+    .onUpdate(event => { scale.value = Math.min(Math.max(savedScale.value * event.scale, minScale), 2.5); })
+    .onEnd(() => { if (scale.value < initialScale) scale.value = withSpring(initialScale); });
 
   const panGesture = Gesture.Pan()
     .onStart(() => { savedTranslateX.value = translateX.value; savedTranslateY.value = translateY.value; })
     .onUpdate(event => { translateX.value = savedTranslateX.value + event.translationX; translateY.value = savedTranslateY.value + event.translationY; })
     .onEnd(() => {
-      const maxX = (gridTotalWidth * scale.value - screenWidth) / 2;
-      const maxY = (gridTotalHeight * scale.value - screenHeight) / 2;
+      // Tighter bounds to keep castles (corners) always visible
+      // Account for HUD areas (~90px top, ~90px bottom)
+      const hudPadding = 90;
+      const effectiveHeight = screenHeight - (hudPadding * 2);
+      const maxX = Math.max(0, (gridTotalWidth * scale.value - screenWidth) / 2);
+      const maxY = Math.max(0, (gridTotalHeight * scale.value - effectiveHeight) / 2);
       if (translateX.value > maxX) translateX.value = withSpring(maxX);
       else if (translateX.value < -maxX) translateX.value = withSpring(-maxX);
       if (translateY.value > maxY) translateY.value = withSpring(maxY);

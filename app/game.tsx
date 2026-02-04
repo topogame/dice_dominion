@@ -34,61 +34,61 @@ export default function GameScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Üst HUD - Ortaçağ temalı */}
+      {/* Grid fills entire screen - terrain always visible */}
+      <View style={styles.gridWrapper}>
+        <GridBoard onCellPress={handleCellPress} />
+      </View>
+
+      {/* Floating HUD - Header (positioned on top of grid) */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
-        {/* Arka plan gradyanı */}
+        {/* Semi-transparent background */}
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>
             <LinearGradient id="headerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="rgba(40, 30, 20, 0.98)" />
-              <Stop offset="100%" stopColor="rgba(30, 20, 15, 0.95)" />
+              <Stop offset="0%" stopColor="rgba(40, 30, 20, 0.9)" />
+              <Stop offset="100%" stopColor="rgba(30, 20, 15, 0.7)" />
             </LinearGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#headerGrad)" />
         </Svg>
 
-        {/* İçerik */}
+        {/* Content */}
         <View style={styles.headerContent}>
-          {/* Geri butonu */}
+          {/* Back button */}
           <Pressable onPress={handleBackPress} style={styles.backButton}>
             <Text style={styles.backButtonText}>← Menü</Text>
           </Pressable>
 
-          {/* Başlık */}
+          {/* Title */}
           <View style={styles.titleContainer}>
             <Text style={styles.headerTitle}>⚔ DICE DOMINION ⚔</Text>
           </View>
 
-          {/* Boş alan (simetri için) */}
+          {/* Empty space for symmetry */}
           <View style={styles.backButton} />
         </View>
 
-        {/* Alt kenarlık */}
+        {/* Bottom border */}
         <View style={styles.headerBorder} />
       </View>
 
-      {/* Izgara tahtası */}
-      <View style={styles.gridWrapper}>
-        <GridBoard onCellPress={handleCellPress} />
-      </View>
-
-      {/* Alt HUD - Bilgi paneli */}
+      {/* Floating HUD - Footer info panel */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        {/* Arka plan gradyanı */}
+        {/* Semi-transparent background */}
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>
             <LinearGradient id="footerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="rgba(30, 20, 15, 0.95)" />
-              <Stop offset="100%" stopColor="rgba(40, 30, 20, 0.98)" />
+              <Stop offset="0%" stopColor="rgba(30, 20, 15, 0.7)" />
+              <Stop offset="100%" stopColor="rgba(40, 30, 20, 0.9)" />
             </LinearGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#footerGrad)" />
         </Svg>
 
-        {/* Üst kenarlık */}
+        {/* Top border */}
         <View style={styles.footerBorder} />
 
-        {/* İçerik */}
+        {/* Content */}
         <View style={styles.footerContent}>
           <Text style={styles.footerText}>
             🎯 Hücreye dokunarak birim yerleştirin
@@ -114,10 +114,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
-  // Header stilleri
+  // Grid fills entire screen
+  gridWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
+  // Floating header on top
   header: {
-    position: 'relative',
-    zIndex: 10,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   headerContent: {
     flexDirection: 'row',
@@ -133,6 +145,9 @@ const styles = StyleSheet.create({
     color: MedievalTheme.gold,
     fontSize: 14,
     fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   titleContainer: {
     flex: 1,
@@ -155,15 +170,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
-  // Grid wrapper
-  gridWrapper: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  // Footer stilleri
+  // Floating footer at bottom
   footer: {
-    position: 'relative',
-    zIndex: 10,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   footerBorder: {
     height: 2,

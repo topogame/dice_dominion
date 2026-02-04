@@ -16,11 +16,13 @@ import {
   Dimensions,
   Animated,
   Easing,
+  Image,
+  ImageBackground,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, LinearGradient, Stop, Rect, RadialGradient, Ellipse } from 'react-native-svg';
-import { MedievalTheme } from '../constants/Colors';
+import Svg, { Defs, LinearGradient, Stop, Rect, RadialGradient, Ellipse, Polygon } from 'react-native-svg';
+import { MedievalTheme, TerrainColors } from '../constants/Colors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -273,13 +275,24 @@ export default function MainMenuScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      {/* Gökyüzü Gradyan Arka Plan */}
+      {/* Terrain Background - Full Screen Grass */}
+      <View style={styles.terrainBackground}>
+        <Image
+          source={require('../assets/tiles/grass1.jpg')}
+          style={styles.terrainTile}
+          resizeMode="cover"
+        />
+      </View>
+
+      {/* Sky Gradient Overlay at Top */}
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>
           <LinearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
             <Stop offset="0%" stopColor={MedievalTheme.skyTop} />
-            <Stop offset="50%" stopColor={MedievalTheme.skyMid} />
-            <Stop offset="100%" stopColor={MedievalTheme.skyBottom} />
+            <Stop offset="25%" stopColor={MedievalTheme.skyMid} />
+            <Stop offset="45%" stopColor="rgba(138, 160, 184, 0.7)" />
+            <Stop offset="55%" stopColor="rgba(74, 124, 52, 0.3)" />
+            <Stop offset="100%" stopColor="transparent" />
           </LinearGradient>
           <RadialGradient id="vignette" cx="50%" cy="50%" r="70%">
             <Stop offset="50%" stopColor="transparent" />
@@ -367,7 +380,20 @@ export default function MainMenuScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: MedievalTheme.skyTop,
+    backgroundColor: TerrainColors.grass.base,
+  },
+  // Terrain background covering full screen
+  terrainBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  terrainTile: {
+    width: '100%',
+    height: '100%',
   },
   content: {
     flex: 1,
@@ -375,11 +401,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 30,
     paddingVertical: 40,
+    zIndex: 10,
   },
   // Bulut stilleri
   cloud: {
     position: 'absolute',
-    zIndex: 1,
+    zIndex: 5,
   },
   // Toz parçacığı stilleri
   dustParticle: {
