@@ -22,6 +22,8 @@ interface GridCellProps {
   castleHP?: number | null;
   isHighlighted: boolean;
   isValidPlacement?: boolean;  // Geçerli yerleştirme hücresi mi?
+  isAttacker?: boolean;        // Saldırabilecek birim mi? (turuncu)
+  isTarget?: boolean;          // Hedef düşman birimi mi? (kırmızı)
   onPress: (x: number, y: number) => void;
 }
 
@@ -55,6 +57,8 @@ const GridCell: React.FC<GridCellProps> = ({
   castleHP = null,
   isHighlighted,
   isValidPlacement = false,
+  isAttacker = false,
+  isTarget = false,
   onPress,
 }) => {
   // Hover durumu (web için)
@@ -68,22 +72,40 @@ const GridCell: React.FC<GridCellProps> = ({
   // Arka plan rengi
   let backgroundColor = getCellBackgroundColor(type, ownerColor);
 
-  // Geçerli yerleştirme hücresi için yeşil arka plan
-  if (isValidPlacement) {
+  // Saldırı durumları için özel arka plan
+  if (isTarget) {
+    // Hedef düşman: kırmızı vurgu
+    backgroundColor = 'rgba(255, 107, 107, 0.5)';
+  } else if (isAttacker) {
+    // Saldıran birim: turuncu vurgu
+    backgroundColor = 'rgba(255, 165, 0, 0.5)';
+  } else if (isValidPlacement) {
+    // Geçerli yerleştirme hücresi için yeşil arka plan
     backgroundColor = 'rgba(144, 238, 144, 0.4)';
   }
 
   // Hover ile birleştirilmiş arka plan (kaleler için hover yok)
-  const finalBackgroundColor = !isCastle && isHovered && isValidPlacement
-    ? 'rgba(144, 238, 144, 0.6)'
-    : !isCastle && isHovered
-    ? adjustColorBrightness(backgroundColor, 0.8)
-    : backgroundColor;
+  let finalBackgroundColor = backgroundColor;
+  if (!isCastle && isHovered) {
+    if (isTarget) {
+      finalBackgroundColor = 'rgba(255, 107, 107, 0.7)';
+    } else if (isAttacker) {
+      finalBackgroundColor = 'rgba(255, 165, 0, 0.7)';
+    } else if (isValidPlacement) {
+      finalBackgroundColor = 'rgba(144, 238, 144, 0.6)';
+    } else {
+      finalBackgroundColor = adjustColorBrightness(backgroundColor, 0.8);
+    }
+  }
 
-  // Kale için kalın kenarlık, geçerli yerleştirme için yeşil kenarlık
-  const borderWidth = isCastle ? 3 : isValidPlacement ? 2 : 1;
+  // Kale için kalın kenarlık, saldırı/hedef/yerleştirme için özel kenarlıklar
+  const borderWidth = isCastle ? 3 : (isTarget || isAttacker || isValidPlacement) ? 2 : 1;
   const borderColor = isCastle
     ? '#ffffff'
+    : isTarget
+    ? GameColors.attackHighlight  // Kırmızı kenarlık (hedef)
+    : isAttacker
+    ? '#FFA500'  // Turuncu kenarlık (saldıran)
     : isValidPlacement
     ? GameColors.highlight
     : isHighlighted

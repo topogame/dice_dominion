@@ -1,11 +1,10 @@
 /**
  * Dice Dominion - Ana Izgara Tahtası Bileşeni
  *
- * Bu dosya oyun haritasının ana ızgara tahtasını render eder.
- * Yakınlaştırma (pinch-to-zoom) ve kaydırma (pan) desteği içerir.
  * Faz 3: Köşelerde kaleler ve oyuncu renkleri.
  * Faz 4: Zar atma ve birim yerleştirme mekaniği.
  * Faz 5: Tur sistemi ve sıra belirleme.
+ * Faz 6: Savaş sistemi - Seçenek A/B/C ve zar savaşları.
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -48,17 +47,34 @@ interface PlayerInfo {
   castlePosition: { x: number; y: number };
   hp: number;
   isActive: boolean;
-  turnOrderRoll?: number; // Sıra belirleme zarı
+  turnOrderRoll?: number;
 }
+
+// Tur seçenekleri
+type TurnOption = 'A' | 'B' | 'C' | null;
 
 // Oyun fazları
 type GamePhase =
-  | 'setup'           // Oyun başlamadı
-  | 'turnOrderRoll'   // Sıra belirleme zarı atılıyor
-  | 'waiting'         // Oyuncu zar atmayı bekliyor
-  | 'rolling'         // Zar atılıyor
-  | 'placing'         // Birim yerleştirme
-  | 'turnComplete';   // Tur tamamlandı
+  | 'setup'
+  | 'turnOrderRoll'
+  | 'selectOption'      // Seçenek A/B/C seçimi
+  | 'waiting'
+  | 'rolling'
+  | 'placing'
+  | 'selectAttacker'    // Saldıran birimi seç
+  | 'selectTarget'      // Hedef seç
+  | 'combat'            // Savaş animasyonu
+  | 'turnComplete';
+
+// Savaş durumu
+interface CombatState {
+  attackerPos: { x: number; y: number } | null;
+  defenderPos: { x: number; y: number } | null;
+  attackerRoll: number | null;
+  defenderRoll: number | null;
+  result: 'win' | 'lose' | 'tie' | null;
+  attacksRemaining: number;  // Option C için
+}
 
 // 4 köşedeki kale pozisyonları
 const CASTLE_POSITIONS = {
@@ -101,18 +117,11 @@ const createInitialGrid = (players: PlayerInfo[]): GridCellType[][] => {
   for (let y = 0; y < GRID_HEIGHT; y++) {
     const row: GridCellType[] = [];
     for (let x = 0; x < GRID_WIDTH; x++) {
-      row.push({
-        x,
-        y,
-        type: 'empty',
-        ownerId: null,
-        isCastle: false,
-      });
+      row.push({ x, y, type: 'empty', ownerId: null, isCastle: false });
     }
     grid.push(row);
   }
 
-  // Aktif oyuncuların kalelerini yerleştir
   players.forEach((player) => {
     if (!player.isActive) return;
     const { x: startX, y: startY } = player.castlePosition;
@@ -140,12 +149,8 @@ const getAdjacentCells = (x: number, y: number): { x: number; y: number }[] => {
 };
 
 // Geçerli yerleştirme hücrelerini bul
-const findValidPlacementCells = (
-  grid: GridCellType[][],
-  playerId: string
-): Set<string> => {
+const findValidPlacementCells = (grid: GridCellType[][], playerId: string): Set<string> => {
   const validCells = new Set<string>();
-
   for (let y = 0; y < GRID_HEIGHT; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       const cell = grid[y][x];
@@ -160,8 +165,41 @@ const findValidPlacementCells = (
       }
     }
   }
-
   return validCells;
+};
+
+// Saldırabilecek birimleri bul (düşman komşusu olan kendi birimleri)
+const findAttackerUnits = (grid: GridCellType[][], playerId: string): Set<string> => {
+  const attackers = new Set<string>();
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      const cell = grid[y][x];
+      if (cell.ownerId === playerId && cell.type === 'unit') {
+        const adjacentCells = getAdjacentCells(x, y);
+        for (const adj of adjacentCells) {
+          const adjCell = grid[adj.y][adj.x];
+          if (adjCell.ownerId && adjCell.ownerId !== playerId && (adjCell.type === 'unit' || adjCell.type === 'castle')) {
+            attackers.add(`${x},${y}`);
+            break;
+          }
+        }
+      }
+    }
+  }
+  return attackers;
+};
+
+// Hedef düşman birimlerini bul (seçili birime komşu)
+const findTargetEnemies = (grid: GridCellType[][], attackerX: number, attackerY: number, playerId: string): Set<string> => {
+  const targets = new Set<string>();
+  const adjacentCells = getAdjacentCells(attackerX, attackerY);
+  for (const adj of adjacentCells) {
+    const adjCell = grid[adj.y][adj.x];
+    if (adjCell.ownerId && adjCell.ownerId !== playerId && (adjCell.type === 'unit' || adjCell.type === 'castle')) {
+      targets.add(`${adj.x},${adj.y}`);
+    }
+  }
+  return targets;
 };
 
 // Zar atma fonksiyonu
@@ -172,25 +210,33 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Oyuncu sayısı (2-4)
   const [playerCount, setPlayerCount] = useState(4);
-
-  // Oyuncu bilgileri (mutable for turn order rolls)
   const [players, setPlayers] = useState<PlayerInfo[]>(() => createPlayers(playerCount));
-
-  // Izgara durumu
   const [grid, setGrid] = useState<GridCellType[][]>(() => createInitialGrid(players));
 
   // Oyun durumu
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
-  const [turnOrder, setTurnOrder] = useState<number[]>([]); // Sıralı oyuncu indeksleri
+  const [turnOrder, setTurnOrder] = useState<number[]>([]);
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
   const [turnNumber, setTurnNumber] = useState(1);
+  const [selectedOption, setSelectedOption] = useState<TurnOption>(null);
   const [diceResult, setDiceResult] = useState<number | null>(null);
   const [remainingPlacements, setRemainingPlacements] = useState(0);
   const [isRolling, setIsRolling] = useState(false);
 
-  // Sıra belirleme için
+  // Sıra belirleme
   const [turnOrderRolls, setTurnOrderRolls] = useState<{ playerId: string; roll: number }[]>([]);
   const [currentRollingPlayerIndex, setCurrentRollingPlayerIndex] = useState(0);
+
+  // Savaş durumu
+  const [combat, setCombat] = useState<CombatState>({
+    attackerPos: null,
+    defenderPos: null,
+    attackerRoll: null,
+    defenderRoll: null,
+    result: null,
+    attacksRemaining: 0,
+  });
+  const [showCombatResult, setShowCombatResult] = useState(false);
 
   // Aktif oyuncular
   const activePlayers = useMemo(() => players.filter(p => p.isActive), [players]);
@@ -203,11 +249,21 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 
   // Geçerli yerleştirme hücreleri
   const validPlacementCells = useMemo(() => {
-    if (gamePhase !== 'placing' || !currentPlayer) {
-      return new Set<string>();
-    }
+    if (gamePhase !== 'placing' || !currentPlayer) return new Set<string>();
     return findValidPlacementCells(grid, currentPlayer.id);
   }, [grid, gamePhase, currentPlayer]);
+
+  // Saldırabilecek birimler
+  const attackerUnits = useMemo(() => {
+    if (gamePhase !== 'selectAttacker' || !currentPlayer) return new Set<string>();
+    return findAttackerUnits(grid, currentPlayer.id);
+  }, [grid, gamePhase, currentPlayer]);
+
+  // Hedef düşman birimleri
+  const targetEnemies = useMemo(() => {
+    if (gamePhase !== 'selectTarget' || !combat.attackerPos || !currentPlayer) return new Set<string>();
+    return findTargetEnemies(grid, combat.attackerPos.x, combat.attackerPos.y, currentPlayer.id);
+  }, [grid, gamePhase, combat.attackerPos, currentPlayer]);
 
   // Zoom ve pan için animated değerler
   const scale = useSharedValue(1);
@@ -230,13 +286,15 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     setTurnOrder([]);
     setCurrentTurnIndex(0);
     setTurnNumber(1);
+    setSelectedOption(null);
     setDiceResult(null);
     setRemainingPlacements(0);
     setTurnOrderRolls([]);
     setCurrentRollingPlayerIndex(0);
+    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
   }, []);
 
-  // Oyunu başlat - sıra belirleme fazına geç
+  // Oyunu başlat
   const handleStartGame = useCallback(() => {
     setGamePhase('turnOrderRoll');
     setTurnOrderRolls([]);
@@ -246,11 +304,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   // Sıra belirleme zarı at
   const handleTurnOrderRoll = useCallback(() => {
     if (isRolling) return;
-
     setIsRolling(true);
     const currentRoller = activePlayers[currentRollingPlayerIndex];
 
-    // Zar animasyonu
     let rollCount = 0;
     const maxRolls = 10;
 
@@ -263,42 +319,45 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
         const finalRoll = rollDice();
         setDiceResult(finalRoll);
 
-        // Zar sonucunu kaydet
         const newRolls = [...turnOrderRolls, { playerId: currentRoller.id, roll: finalRoll }];
         setTurnOrderRolls(newRolls);
 
-        // Tüm oyuncular attı mı?
         if (newRolls.length >= activePlayers.length) {
-          // Sırayı belirle (en yüksekten en düşüğe)
           const sortedRolls = [...newRolls].sort((a, b) => b.roll - a.roll);
-          const order = sortedRolls.map(r =>
-            activePlayers.findIndex(p => p.id === r.playerId)
-          );
+          const order = sortedRolls.map(r => activePlayers.findIndex(p => p.id === r.playerId));
           setTurnOrder(order);
 
-          // Oyunu başlat
           setTimeout(() => {
-            setGamePhase('waiting');
+            setGamePhase('selectOption');
             setDiceResult(null);
           }, 1500);
         } else {
-          // Sonraki oyuncu
           setTimeout(() => {
             setCurrentRollingPlayerIndex(currentRollingPlayerIndex + 1);
             setDiceResult(null);
             setIsRolling(false);
           }, 1000);
         }
-
         setIsRolling(false);
       }
     }, 100);
   }, [isRolling, activePlayers, currentRollingPlayerIndex, turnOrderRolls]);
 
+  // Seçenek seç (A/B/C)
+  const handleSelectOption = useCallback((option: TurnOption) => {
+    setSelectedOption(option);
+    if (option === 'A') {
+      setGamePhase('waiting');
+    } else if (option === 'B' || option === 'C') {
+      const attacksRemaining = option === 'C' ? 2 : 1;
+      setCombat(prev => ({ ...prev, attacksRemaining }));
+      setGamePhase('selectAttacker');
+    }
+  }, []);
+
   // Normal zar at (birim yerleştirme için)
   const handleRollDice = useCallback(() => {
     if (isRolling) return;
-
     setIsRolling(true);
     setGamePhase('rolling');
 
@@ -320,53 +379,179 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }, 100);
   }, [isRolling]);
 
+  // Savaş zarları at
+  const executeCombat = useCallback(() => {
+    setGamePhase('combat');
+    setShowCombatResult(false);
+
+    let rollCount = 0;
+    const maxRolls = 8;
+
+    const rollInterval = setInterval(() => {
+      setCombat(prev => ({
+        ...prev,
+        attackerRoll: rollDice(),
+        defenderRoll: rollDice(),
+      }));
+      rollCount++;
+
+      if (rollCount >= maxRolls) {
+        clearInterval(rollInterval);
+        const attackerFinal = rollDice();
+        const defenderFinal = rollDice();
+
+        // Beraberlik savunana gider
+        let result: 'win' | 'lose' | 'tie';
+        if (attackerFinal > defenderFinal) {
+          result = 'win';
+        } else if (attackerFinal < defenderFinal) {
+          result = 'lose';
+        } else {
+          result = 'tie'; // Beraberlik = savunan kazanır
+        }
+
+        setCombat(prev => ({
+          ...prev,
+          attackerRoll: attackerFinal,
+          defenderRoll: defenderFinal,
+          result,
+        }));
+        setShowCombatResult(true);
+      }
+    }, 150);
+  }, []);
+
+  // Savaş sonucunu uygula
+  const applyCombatResult = useCallback(() => {
+    const { attackerPos, defenderPos, result, attacksRemaining } = combat;
+    if (!attackerPos || !defenderPos || !result) return;
+
+    setGrid(prevGrid => {
+      const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+      const attackerCell = newGrid[attackerPos.y][attackerPos.x];
+      const defenderCell = newGrid[defenderPos.y][defenderPos.x];
+
+      if (result === 'win') {
+        // Saldıran kazandı: savunanın hücresi saldırana geçer
+        defenderCell.ownerId = currentPlayer.id;
+        if (defenderCell.type === 'unit') {
+          defenderCell.type = 'unit';
+        }
+      } else {
+        // Saldıran kaybetti veya berabere (berabere = savunan kazanır)
+        // Saldıranın birimi ölür
+        attackerCell.type = 'empty';
+        attackerCell.ownerId = null;
+      }
+
+      return newGrid;
+    });
+
+    // Sonraki adım
+    if (result === 'win') {
+      const remainingAttacks = attacksRemaining - 1;
+      if (selectedOption === 'B') {
+        // Option B: 1 saldırı + genişleme
+        setGamePhase('waiting');
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+      } else if (selectedOption === 'C' && remainingAttacks > 0) {
+        // Option C: 2. saldırı hakkı
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: remainingAttacks });
+        setGamePhase('selectAttacker');
+      } else {
+        // Option C: saldırılar bitti, genişleme yok
+        setGamePhase('turnComplete');
+        setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+      }
+    } else {
+      // Kaybettiyse tur biter
+      setGamePhase('turnComplete');
+      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+    }
+
+    setShowCombatResult(false);
+  }, [combat, currentPlayer, selectedOption]);
+
   // Turu bitir
   const handleEndTurn = useCallback(() => {
     const nextIndex = (currentTurnIndex + 1) % turnOrder.length;
     setCurrentTurnIndex(nextIndex);
 
-    // Yeni tur mu?
     if (nextIndex === 0) {
       setTurnNumber(prev => prev + 1);
     }
 
-    setGamePhase('waiting');
+    setGamePhase('selectOption');
+    setSelectedOption(null);
     setDiceResult(null);
     setRemainingPlacements(0);
+    setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
   }, [currentTurnIndex, turnOrder.length]);
 
   // Hücreye tıklandığında
   const handleCellPress = useCallback((x: number, y: number) => {
     const cell = grid[y][x];
-
-    if (cell.isCastle) return;
-    if (gamePhase !== 'placing' || remainingPlacements <= 0) return;
-
     const cellKey = `${x},${y}`;
-    if (!validPlacementCells.has(cellKey)) return;
 
-    setGrid((prevGrid) => {
-      const newGrid = prevGrid.map((row) => row.map((c) => ({ ...c })));
-      const targetCell = newGrid[y][x];
-      targetCell.type = 'unit';
-      targetCell.ownerId = currentPlayer.id;
-      return newGrid;
-    });
+    // Saldıran birim seçimi
+    if (gamePhase === 'selectAttacker') {
+      if (attackerUnits.has(cellKey)) {
+        setCombat(prev => ({ ...prev, attackerPos: { x, y } }));
+        setGamePhase('selectTarget');
+      }
+      return;
+    }
 
-    const newRemaining = remainingPlacements - 1;
-    setRemainingPlacements(newRemaining);
+    // Hedef seçimi
+    if (gamePhase === 'selectTarget') {
+      if (targetEnemies.has(cellKey)) {
+        setCombat(prev => ({ ...prev, defenderPos: { x, y } }));
+        executeCombat();
+      }
+      return;
+    }
 
-    if (newRemaining === 0) {
-      setGamePhase('turnComplete');
+    // Yerleştirme
+    if (gamePhase === 'placing') {
+      if (cell.isCastle) return;
+      if (remainingPlacements <= 0) return;
+      if (!validPlacementCells.has(cellKey)) return;
+
+      setGrid(prevGrid => {
+        const newGrid = prevGrid.map(row => row.map(c => ({ ...c })));
+        const targetCell = newGrid[y][x];
+        targetCell.type = 'unit';
+        targetCell.ownerId = currentPlayer.id;
+        return newGrid;
+      });
+
+      const newRemaining = remainingPlacements - 1;
+      setRemainingPlacements(newRemaining);
+
+      if (newRemaining === 0) {
+        setGamePhase('turnComplete');
+      }
     }
 
     onCellPress?.(x, y);
-  }, [grid, gamePhase, remainingPlacements, validPlacementCells, currentPlayer, onCellPress]);
+  }, [grid, gamePhase, remainingPlacements, validPlacementCells, attackerUnits, targetEnemies, currentPlayer, executeCombat, onCellPress]);
+
+  // İptal (geri dön)
+  const handleCancel = useCallback(() => {
+    if (gamePhase === 'selectTarget') {
+      setCombat(prev => ({ ...prev, attackerPos: null }));
+      setGamePhase('selectAttacker');
+    } else if (gamePhase === 'selectAttacker') {
+      setGamePhase('selectOption');
+      setSelectedOption(null);
+      setCombat({ attackerPos: null, defenderPos: null, attackerRoll: null, defenderRoll: null, result: null, attacksRemaining: 0 });
+    }
+  }, [gamePhase]);
 
   // Oyuncu rengini al
   const getOwnerColor = (ownerId: string | null): string | null => {
     if (!ownerId) return null;
-    const player = players.find((p) => p.id === ownerId);
+    const player = players.find(p => p.id === ownerId);
     if (player) return player.colorHex;
     if (ownerId === 'rebel') return PlayerColors.rebel;
     return null;
@@ -375,39 +560,29 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   // Kale HP'sini al
   const getCastleHP = (ownerId: string | null): number | null => {
     if (!ownerId) return null;
-    const player = players.find((p) => p.id === ownerId);
+    const player = players.find(p => p.id === ownerId);
     return player?.hp ?? null;
   };
 
-  // Oyuncu sayısı seçici (sadece setup fazında)
+  // Oyuncu sayısı seçici
   const renderPlayerCountSelector = () => (
     <View style={styles.selectorContainer}>
-      <Text style={styles.selectorLabel}>Oyuncu Sayısı:</Text>
+      <Text style={styles.selectorLabel}>Oyuncu:</Text>
       <View style={styles.selectorButtons}>
-        {[2, 3, 4].map((count) => (
+        {[2, 3, 4].map(count => (
           <TouchableOpacity
             key={count}
-            style={[
-              styles.selectorButton,
-              playerCount === count && styles.selectorButtonActive,
-            ]}
+            style={[styles.selectorButton, playerCount === count && styles.selectorButtonActive]}
             onPress={() => handlePlayerCountChange(count)}
             disabled={gamePhase !== 'setup'}
           >
-            <Text
-              style={[
-                styles.selectorButtonText,
-                playerCount === count && styles.selectorButtonTextActive,
-              ]}
-            >
-              {count}
-            </Text>
+            <Text style={[styles.selectorButtonText, playerCount === count && styles.selectorButtonTextActive]}>{count}</Text>
           </TouchableOpacity>
         ))}
       </View>
       {gamePhase === 'setup' && (
         <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
-          <Text style={styles.startButtonText}>Oyunu Başlat</Text>
+          <Text style={styles.startButtonText}>Başlat</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -416,122 +591,168 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   // Sıra belirleme UI
   const renderTurnOrderRoll = () => {
     if (gamePhase !== 'turnOrderRoll') return null;
-
     const currentRoller = activePlayers[currentRollingPlayerIndex];
 
     return (
       <View style={styles.turnOrderContainer}>
         <Text style={styles.turnOrderTitle}>Sıra Belirleme</Text>
-
-        {/* Önceki atışlar */}
         <View style={styles.rollResults}>
-          {turnOrderRolls.map((roll, index) => {
+          {turnOrderRolls.map(roll => {
             const player = activePlayers.find(p => p.id === roll.playerId);
             return (
               <View key={roll.playerId} style={styles.rollResultItem}>
                 <View style={[styles.rollResultColor, { backgroundColor: player?.colorHex }]} />
-                <Text style={styles.rollResultText}>{player?.color}: {roll.roll}</Text>
+                <Text style={styles.rollResultText}>{roll.roll}</Text>
               </View>
             );
           })}
         </View>
-
-        {/* Mevcut atış */}
         {currentRollingPlayerIndex < activePlayers.length && (
           <View style={styles.currentRollContainer}>
             <View style={[styles.currentRollerIndicator, { backgroundColor: currentRoller?.colorHex }]} />
-            <Text style={styles.currentRollerText}>
-              {currentRoller?.color.toUpperCase()} zarını atsın
-            </Text>
-
             {diceResult !== null && (
               <View style={styles.diceDisplayLarge}>
                 <Text style={styles.diceNumberLarge}>{diceResult}</Text>
               </View>
             )}
-
-            <TouchableOpacity
-              style={[styles.rollButton, isRolling && styles.rollButtonDisabled]}
-              onPress={handleTurnOrderRoll}
-              disabled={isRolling}
-            >
-              <Text style={styles.rollButtonText}>
-                {isRolling ? 'Atılıyor...' : '🎲 Zar At'}
-              </Text>
+            <TouchableOpacity style={[styles.rollButton, isRolling && styles.rollButtonDisabled]} onPress={handleTurnOrderRoll} disabled={isRolling}>
+              <Text style={styles.rollButtonText}>{isRolling ? '...' : '🎲 At'}</Text>
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Sonuç - tüm oyuncular attıysa */}
         {turnOrderRolls.length >= activePlayers.length && (
-          <View style={styles.turnOrderResult}>
-            <Text style={styles.turnOrderResultTitle}>Oyun Sırası:</Text>
-            {[...turnOrderRolls]
-              .sort((a, b) => b.roll - a.roll)
-              .map((roll, index) => {
-                const player = activePlayers.find(p => p.id === roll.playerId);
-                return (
-                  <Text key={roll.playerId} style={styles.turnOrderResultText}>
-                    {index + 1}. {player?.color.toUpperCase()} ({roll.roll})
-                  </Text>
-                );
-              })}
-          </View>
+          <Text style={styles.turnOrderResultTitle}>Başlıyor...</Text>
         )}
       </View>
     );
   };
 
+  // Seçenek menüsü (A/B/C)
+  const renderOptionMenu = () => {
+    if (gamePhase !== 'selectOption') return null;
+    const hasAttackers = findAttackerUnits(grid, currentPlayer?.id || '').size > 0;
+
+    return (
+      <View style={styles.optionMenuContainer}>
+        <Text style={styles.optionMenuTitle}>Seçenek Seç</Text>
+        <View style={styles.optionButtons}>
+          <TouchableOpacity style={styles.optionButton} onPress={() => handleSelectOption('A')}>
+            <Text style={styles.optionButtonLabel}>A</Text>
+            <Text style={styles.optionButtonDesc}>Genişle</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, !hasAttackers && styles.optionButtonDisabled]}
+            onPress={() => handleSelectOption('B')}
+            disabled={!hasAttackers}
+          >
+            <Text style={styles.optionButtonLabel}>B</Text>
+            <Text style={styles.optionButtonDesc}>1 Saldırı + Genişle</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, !hasAttackers && styles.optionButtonDisabled]}
+            onPress={() => handleSelectOption('C')}
+            disabled={!hasAttackers}
+          >
+            <Text style={styles.optionButtonLabel}>C</Text>
+            <Text style={styles.optionButtonDesc}>2 Saldırı</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  // Savaş UI
+  const renderCombatUI = () => {
+    if (gamePhase === 'selectAttacker') {
+      return (
+        <View style={styles.combatUIContainer}>
+          <Text style={styles.combatUIText}>Saldıracak birimi seç (turuncu)</Text>
+          <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+            <Text style={styles.cancelButtonText}>İptal</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (gamePhase === 'selectTarget') {
+      return (
+        <View style={styles.combatUIContainer}>
+          <Text style={styles.combatUIText}>Hedef seç (kırmızı)</Text>
+          <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+            <Text style={styles.cancelButtonText}>Geri</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    if (gamePhase === 'combat') {
+      return (
+        <View style={styles.combatUIContainer}>
+          <View style={styles.combatDiceRow}>
+            <View style={styles.combatDiceBox}>
+              <Text style={styles.combatDiceLabel}>Saldıran</Text>
+              <Text style={styles.combatDiceNumber}>{combat.attackerRoll || '?'}</Text>
+            </View>
+            <Text style={styles.combatVS}>VS</Text>
+            <View style={styles.combatDiceBox}>
+              <Text style={styles.combatDiceLabel}>Savunan</Text>
+              <Text style={styles.combatDiceNumber}>{combat.defenderRoll || '?'}</Text>
+            </View>
+          </View>
+          {showCombatResult && (
+            <View style={styles.combatResultContainer}>
+              <Text style={[
+                styles.combatResultText,
+                combat.result === 'win' ? styles.combatWin : styles.combatLose
+              ]}>
+                {combat.result === 'win' ? '✓ KAZANDIN!' : combat.result === 'tie' ? '= BERABERLİK (Savunan kazanır)' : '✗ KAYBETTİN!'}
+              </Text>
+              <TouchableOpacity style={styles.continueButton} onPress={applyCombatResult}>
+                <Text style={styles.continueButtonText}>Devam →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      );
+    }
+    return null;
+  };
+
   // Oyun kontrolleri
   const renderGameControls = () => {
-    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll') return null;
+    if (gamePhase === 'setup' || gamePhase === 'turnOrderRoll' || gamePhase === 'selectOption') return null;
+    if (gamePhase === 'selectAttacker' || gamePhase === 'selectTarget' || gamePhase === 'combat') return renderCombatUI();
 
     return (
       <View style={styles.controlsContainer}>
-        {/* Tur bilgisi */}
         <View style={styles.turnInfo}>
           <Text style={styles.turnNumber}>Tur {turnNumber}</Text>
           <View style={styles.currentPlayerInfo}>
             <View style={[styles.playerColorIndicator, { backgroundColor: currentPlayer?.colorHex }]} />
-            <Text style={styles.currentPlayerText}>
-              {currentPlayer?.color.toUpperCase()}'in Sırası
-            </Text>
+            <Text style={styles.currentPlayerText}>{selectedOption && `[${selectedOption}]`}</Text>
           </View>
         </View>
-
-        {/* Zar ve yerleştirme kontrolleri */}
         <View style={styles.diceContainer}>
           {gamePhase === 'waiting' && (
             <TouchableOpacity style={styles.rollButton} onPress={handleRollDice}>
               <Text style={styles.rollButtonText}>🎲 Zar At</Text>
             </TouchableOpacity>
           )}
-
           {gamePhase === 'rolling' && (
             <View style={styles.diceDisplay}>
               <Text style={styles.diceNumber}>{diceResult || '?'}</Text>
-              <Text style={styles.diceLabel}>Atılıyor...</Text>
             </View>
           )}
-
           {gamePhase === 'placing' && (
             <View style={styles.placementInfo}>
               <View style={styles.diceDisplay}>
                 <Text style={styles.diceNumber}>{diceResult}</Text>
               </View>
-              <Text style={styles.placementText}>
-                Kalan: {remainingPlacements}
-              </Text>
+              <Text style={styles.placementText}>Kalan: {remainingPlacements}</Text>
             </View>
           )}
-
           {gamePhase === 'turnComplete' && (
-            <View style={styles.turnCompleteContainer}>
-              <Text style={styles.turnCompleteText}>✓ Tur Bitti</Text>
-              <TouchableOpacity style={styles.endTurnButton} onPress={handleEndTurn}>
-                <Text style={styles.endTurnButtonText}>Sonraki →</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.endTurnButton} onPress={handleEndTurn}>
+              <Text style={styles.endTurnButtonText}>Sonraki →</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -541,20 +762,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
   // HP göstergesi
   const renderHPIndicators = () => (
     <View style={styles.hpContainer}>
-      {activePlayers.map((player, index) => {
+      {activePlayers.map(player => {
         const isCurrentPlayer = currentPlayer?.id === player.id;
         return (
-          <View
-            key={player.id}
-            style={[
-              styles.hpItem,
-              isCurrentPlayer && styles.hpItemActive,
-            ]}
-          >
+          <View key={player.id} style={[styles.hpItem, isCurrentPlayer && styles.hpItemActive]}>
             <View style={[styles.hpColorDot, { backgroundColor: player.colorHex }]} />
-            <Text style={styles.hpText}>
-              {'❤️'.repeat(player.hp)}{'🖤'.repeat(CASTLE_MAX_HP - player.hp)}
-            </Text>
+            <Text style={styles.hpText}>{'❤️'.repeat(player.hp)}</Text>
           </View>
         );
       })}
@@ -569,6 +782,9 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
           {row.map((cell, x) => {
             const cellKey = `${x},${y}`;
             const isValidPlacement = validPlacementCells.has(cellKey);
+            const isAttacker = attackerUnits.has(cellKey);
+            const isTarget = targetEnemies.has(cellKey);
+            const isSelectedAttacker = combat.attackerPos?.x === x && combat.attackerPos?.y === y;
 
             return (
               <GridCell
@@ -583,6 +799,8 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
                 castleHP={cell.isCastle ? getCastleHP(cell.ownerId) : null}
                 isHighlighted={isValidPlacement}
                 isValidPlacement={isValidPlacement}
+                isAttacker={isAttacker || isSelectedAttacker}
+                isTarget={isTarget}
                 onPress={handleCellPress}
               />
             );
@@ -598,72 +816,44 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       <View style={styles.container}>
         {renderPlayerCountSelector()}
         {renderTurnOrderRoll()}
+        {renderOptionMenu()}
         {renderGameControls()}
-        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
-        <View
-          // @ts-ignore
-          style={{
-            flex: 1,
-            overflow: 'auto',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 20,
-          }}
-        >
+        {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'selectOption' && renderHPIndicators()}
+        <View style={{ flex: 1, overflow: 'auto' as any, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           {renderGridContent()}
         </View>
       </View>
     );
   }
 
-  // Mobil için gesture desteği
+  // Mobil için
   const pinchGesture = Gesture.Pinch()
     .onStart(() => { savedScale.value = scale.value; })
-    .onUpdate((event) => {
-      const newScale = savedScale.value * event.scale;
-      scale.value = Math.min(Math.max(newScale, 0.5), 3);
-    })
-    .onEnd(() => {
-      if (scale.value < 0.8) scale.value = withSpring(0.8);
-    });
+    .onUpdate(event => { scale.value = Math.min(Math.max(savedScale.value * event.scale, 0.5), 3); })
+    .onEnd(() => { if (scale.value < 0.8) scale.value = withSpring(0.8); });
 
   const panGesture = Gesture.Pan()
-    .onStart(() => {
-      savedTranslateX.value = translateX.value;
-      savedTranslateY.value = translateY.value;
-    })
-    .onUpdate((event) => {
-      translateX.value = savedTranslateX.value + event.translationX;
-      translateY.value = savedTranslateY.value + event.translationY;
-    })
+    .onStart(() => { savedTranslateX.value = translateX.value; savedTranslateY.value = translateY.value; })
+    .onUpdate(event => { translateX.value = savedTranslateX.value + event.translationX; translateY.value = savedTranslateY.value + event.translationY; })
     .onEnd(() => {
-      const maxTranslateX = (gridTotalWidth * scale.value - screenWidth) / 2;
-      const maxTranslateY = (gridTotalHeight * scale.value - screenHeight) / 2;
-
-      if (translateX.value > maxTranslateX) translateX.value = withSpring(maxTranslateX);
-      else if (translateX.value < -maxTranslateX) translateX.value = withSpring(-maxTranslateX);
-
-      if (translateY.value > maxTranslateY) translateY.value = withSpring(maxTranslateY);
-      else if (translateY.value < -maxTranslateY) translateY.value = withSpring(-maxTranslateY);
+      const maxX = (gridTotalWidth * scale.value - screenWidth) / 2;
+      const maxY = (gridTotalHeight * scale.value - screenHeight) / 2;
+      if (translateX.value > maxX) translateX.value = withSpring(maxX);
+      else if (translateX.value < -maxX) translateX.value = withSpring(-maxX);
+      if (translateY.value > maxY) translateY.value = withSpring(maxY);
+      else if (translateY.value < -maxY) translateY.value = withSpring(-maxY);
     });
 
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-  }));
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }] }));
 
   return (
     <GestureHandlerRootView style={styles.container}>
       {renderPlayerCountSelector()}
       {renderTurnOrderRoll()}
+      {renderOptionMenu()}
       {renderGameControls()}
-      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && renderHPIndicators()}
+      {gamePhase !== 'setup' && gamePhase !== 'turnOrderRoll' && gamePhase !== 'selectOption' && renderHPIndicators()}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
           {renderGridContent()}
@@ -674,294 +864,73 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-  },
-  selectorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#2a2a4a',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  selectorLabel: {
-    color: '#f0f0f5',
-    fontSize: 14,
-    marginRight: 8,
-  },
-  selectorButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  selectorButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#3a3a5a',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  selectorButtonActive: {
-    backgroundColor: '#4A90D9',
-    borderColor: '#6BA3E0',
-  },
-  selectorButtonText: {
-    color: '#888',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  selectorButtonTextActive: {
-    color: '#fff',
-  },
-  startButton: {
-    backgroundColor: '#4AD97A',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  startButtonText: {
-    color: '#1a1a2e',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  turnOrderContainer: {
-    backgroundColor: '#252540',
-    padding: 16,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#3a3a5a',
-  },
-  turnOrderTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  rollResults: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  rollResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#3a3a5a',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  rollResultColor: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  rollResultText: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  currentRollContainer: {
-    alignItems: 'center',
-    gap: 12,
-  },
-  currentRollerIndicator: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: '#fff',
-  },
-  currentRollerText: {
-    color: '#f0f0f5',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  diceDisplayLarge: {
-    backgroundColor: '#3a3a5a',
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  diceNumberLarge: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  turnOrderResult: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  turnOrderResultTitle: {
-    color: '#90EE90',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  turnOrderResultText: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  controlsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#252540',
-    borderBottomWidth: 1,
-    borderBottomColor: '#3a3a5a',
-  },
-  turnInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  turnNumber: {
-    color: '#888',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  currentPlayerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  playerColorIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  currentPlayerText: {
-    color: '#f0f0f5',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  diceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  rollButton: {
-    backgroundColor: '#4A90D9',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  rollButtonDisabled: {
-    opacity: 0.6,
-  },
-  rollButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  diceDisplay: {
-    alignItems: 'center',
-    backgroundColor: '#3a3a5a',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 6,
-    minWidth: 45,
-  },
-  diceNumber: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  diceLabel: {
-    color: '#888',
-    fontSize: 9,
-  },
-  placementInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  placementText: {
-    color: '#90EE90',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  turnCompleteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  turnCompleteText: {
-    color: '#90EE90',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  endTurnButton: {
-    backgroundColor: '#4AD97A',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  endTurnButtonText: {
-    color: '#1a1a2e',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  hpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: '#1f1f35',
-    gap: 12,
-  },
-  hpItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  hpItemActive: {
-    backgroundColor: 'rgba(144, 238, 144, 0.2)',
-    borderWidth: 1,
-    borderColor: '#90EE90',
-  },
-  hpColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  hpText: {
-    fontSize: 11,
-  },
-  gridContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  grid: {
-    backgroundColor: GameColors.grid,
-    borderWidth: 2,
-    borderColor: GameColors.gridBorder,
-    borderRadius: 4,
-  },
-  row: {
-    flexDirection: 'row',
-  },
+  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  selectorContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#2a2a4a', flexWrap: 'wrap', gap: 8 },
+  selectorLabel: { color: '#f0f0f5', fontSize: 12, marginRight: 6 },
+  selectorButtons: { flexDirection: 'row', gap: 4 },
+  selectorButton: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 4, backgroundColor: '#3a3a5a' },
+  selectorButtonActive: { backgroundColor: '#4A90D9' },
+  selectorButtonText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  selectorButtonTextActive: { color: '#fff' },
+  startButton: { backgroundColor: '#4AD97A', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 6 },
+  startButtonText: { color: '#1a1a2e', fontSize: 12, fontWeight: '700' },
+  turnOrderContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  turnOrderTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  rollResults: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 12 },
+  rollResultItem: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#3a3a5a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  rollResultColor: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: '#fff' },
+  rollResultText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  currentRollContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  currentRollerIndicator: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff' },
+  diceDisplayLarge: { backgroundColor: '#3a3a5a', width: 50, height: 50, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  diceNumberLarge: { color: '#fff', fontSize: 28, fontWeight: '900' },
+  turnOrderResultTitle: { color: '#90EE90', fontSize: 14, fontWeight: '700', marginTop: 8 },
+  optionMenuContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  optionMenuTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  optionButtons: { flexDirection: 'row', gap: 10 },
+  optionButton: { backgroundColor: '#4A90D9', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, alignItems: 'center', minWidth: 90 },
+  optionButtonDisabled: { backgroundColor: '#3a3a5a', opacity: 0.5 },
+  optionButtonLabel: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  optionButtonDesc: { color: '#ddd', fontSize: 10, marginTop: 2 },
+  combatUIContainer: { backgroundColor: '#252540', padding: 12, alignItems: 'center' },
+  combatUIText: { color: '#fff', fontSize: 14, marginBottom: 8 },
+  cancelButton: { backgroundColor: '#666', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 6 },
+  cancelButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  combatDiceRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  combatDiceBox: { alignItems: 'center', backgroundColor: '#3a3a5a', padding: 12, borderRadius: 8 },
+  combatDiceLabel: { color: '#888', fontSize: 10, marginBottom: 4 },
+  combatDiceNumber: { color: '#fff', fontSize: 32, fontWeight: '900' },
+  combatVS: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  combatResultContainer: { marginTop: 12, alignItems: 'center' },
+  combatResultText: { fontSize: 18, fontWeight: '900' },
+  combatWin: { color: '#90EE90' },
+  combatLose: { color: '#FF6B6B' },
+  continueButton: { backgroundColor: '#4AD97A', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 6, marginTop: 8 },
+  continueButtonText: { color: '#1a1a2e', fontSize: 14, fontWeight: '700' },
+  controlsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#252540' },
+  turnInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  turnNumber: { color: '#888', fontSize: 11, fontWeight: '600' },
+  currentPlayerInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  playerColorIndicator: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#fff' },
+  currentPlayerText: { color: '#f0f0f5', fontSize: 12, fontWeight: '600' },
+  diceContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rollButton: { backgroundColor: '#4A90D9', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
+  rollButtonDisabled: { opacity: 0.6 },
+  rollButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  diceDisplay: { alignItems: 'center', backgroundColor: '#3a3a5a', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6 },
+  diceNumber: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  placementInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  placementText: { color: '#90EE90', fontSize: 12, fontWeight: '600' },
+  endTurnButton: { backgroundColor: '#4AD97A', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
+  endTurnButtonText: { color: '#1a1a2e', fontSize: 12, fontWeight: '700' },
+  hpContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#1f1f35', gap: 10 },
+  hpItem: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  hpItemActive: { backgroundColor: 'rgba(144, 238, 144, 0.2)', borderWidth: 1, borderColor: '#90EE90' },
+  hpColorDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
+  hpText: { fontSize: 10 },
+  gridContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  grid: { backgroundColor: GameColors.grid, borderWidth: 2, borderColor: GameColors.gridBorder, borderRadius: 4 },
+  row: { flexDirection: 'row' },
 });
 
 export default GridBoard;
