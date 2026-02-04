@@ -10,6 +10,7 @@
  * Faz 9: Arazi haritaları - Nehir ve Dağ haritaları, köprüler ve geçitler.
  * Faz 10: İsyancı istilası - AI kontrollü isyancı birimleri.
  * Faz 11: Tur zamanlayıcısı ve UI geliştirmeleri.
+ * Görsel Faz V1: Harita arka planı ve arazi dokuları.
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
@@ -33,8 +34,9 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import GridCell from './GridCell';
+import MapBackground from './MapBackground';
 import { GridCell as GridCellType, PlayerColor } from '../../types/game.types';
-import { GameColors, PlayerColors } from '../../../constants/Colors';
+import { GameColors, PlayerColors, TerrainColors } from '../../../constants/Colors';
 
 // Izgara sabitleri
 const GRID_WIDTH = 24;
@@ -1814,40 +1816,42 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     );
   };
 
-  // Grid içeriği
+  // Grid içeriği - Görsel Faz V1: MapBackground ile sarılmış
   const renderGridContent = () => (
-    <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-      {grid.map((row, y) => (
-        <View key={`row-${y}`} style={styles.row}>
-          {row.map((cell, x) => {
-            const cellKey = `${x},${y}`;
-            const isValidPlacement = validPlacementCells.has(cellKey);
-            const isAttacker = attackerUnits.has(cellKey);
-            const isTarget = targetEnemies.has(cellKey);
-            const isSelectedAttacker = combat.attackerPos?.x === x && combat.attackerPos?.y === y;
+    <MapBackground mapType={mapType} width={gridTotalWidth} height={gridTotalHeight}>
+      <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
+        {grid.map((row, y) => (
+          <View key={`row-${y}`} style={styles.row}>
+            {row.map((cell, x) => {
+              const cellKey = `${x},${y}`;
+              const isValidPlacement = validPlacementCells.has(cellKey);
+              const isAttacker = attackerUnits.has(cellKey);
+              const isTarget = targetEnemies.has(cellKey);
+              const isSelectedAttacker = combat.attackerPos?.x === x && combat.attackerPos?.y === y;
 
-            return (
-              <GridCell
-                key={`cell-${x}-${y}`}
-                x={x}
-                y={y}
-                size={CELL_SIZE}
-                type={cell.type}
-                ownerId={cell.ownerId}
-                ownerColor={getOwnerColor(cell.ownerId)}
-                isCastle={cell.isCastle}
-                castleHP={cell.isCastle ? getCastleHP(cell.ownerId) : null}
-                isHighlighted={isValidPlacement}
-                isValidPlacement={isValidPlacement}
-                isAttacker={isAttacker || isSelectedAttacker}
-                isTarget={isTarget}
-                onPress={handleCellPress}
-              />
-            );
-          })}
-        </View>
-      ))}
-    </View>
+              return (
+                <GridCell
+                  key={`cell-${x}-${y}`}
+                  x={x}
+                  y={y}
+                  size={CELL_SIZE}
+                  type={cell.type}
+                  ownerId={cell.ownerId}
+                  ownerColor={getOwnerColor(cell.ownerId)}
+                  isCastle={cell.isCastle}
+                  castleHP={cell.isCastle ? getCastleHP(cell.ownerId) : null}
+                  isHighlighted={isValidPlacement}
+                  isValidPlacement={isValidPlacement}
+                  isAttacker={isAttacker || isSelectedAttacker}
+                  isTarget={isTarget}
+                  onPress={handleCellPress}
+                />
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    </MapBackground>
   );
 
   // Web için
@@ -1984,7 +1988,8 @@ const styles = StyleSheet.create({
   hpColorDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
   hpText: { fontSize: 10 },
   gridContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  grid: { backgroundColor: GameColors.grid, borderWidth: 2, borderColor: GameColors.gridBorder, borderRadius: 4 },
+  // Görsel Faz V1: Arazi dokuları görünür olması için arka plan kaldırıldı
+  grid: { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(58, 58, 90, 0.5)', borderRadius: 4 },
   row: { flexDirection: 'row' },
   // Oyun bitti stili
   gameOverContainer: { backgroundColor: '#252540', padding: 24, alignItems: 'center', borderRadius: 12, margin: 12 },

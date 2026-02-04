@@ -1,14 +1,18 @@
 /**
  * Dice Dominion - Izgara Hücresi Bileşeni
+ * Görsel Faz V1 Güncellemesi
  *
  * Bu dosya tek bir ızgara hücresini render eder.
  * Hücre tıklanabilir ve farklı durumları görsel olarak gösterir.
  * Faz 3: Kale hücreleri kalın kenarlıkla gösterilir.
+ * Görsel Faz V1: Ortaçağ temalı arazi dokuları ve animasyonlar eklendi.
+ *
+ * PLACEHOLDER: Gradyan dolgular gerçek piksel sanat varlıkları ile değiştirilecek.
  */
 
-import React, { memo, useCallback, useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, Platform } from 'react-native';
-import { GameColors } from '../../../constants/Colors';
+import React, { memo, useCallback, useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, TouchableOpacity, Platform, Animated, Easing } from 'react-native';
+import { GameColors, TerrainColors } from '../../../constants/Colors';
 import { CellType } from '../../types/game.types';
 
 interface GridCellProps {
@@ -27,24 +31,234 @@ interface GridCellProps {
   onPress: (x: number, y: number) => void;
 }
 
-// Hücre türüne göre arka plan rengi
-const getCellBackgroundColor = (type: CellType, ownerColor: string | null): string => {
+// Çim varyant seçimi (pozisyona göre tutarlı)
+const getGrassVariant = (x: number, y: number): number => {
+  return (x * 7 + y * 13) % 4;
+};
+
+// Hücre türüne göre arazi arka plan rengi
+const getTerrainBackgroundColor = (type: CellType, x: number, y: number, ownerColor: string | null): string => {
   switch (type) {
     case 'river':
-      return GameColors.river;
+      return TerrainColors.water.base;
     case 'mountain':
-      return GameColors.mountain;
+      // Dağ dokusu varyasyonu
+      const rockVariant = (x + y) % 3;
+      return rockVariant === 0
+        ? TerrainColors.rock.base
+        : rockVariant === 1
+        ? TerrainColors.rock.light
+        : TerrainColors.rock.dark;
     case 'bridge':
-      return GameColors.bridge;
+      return TerrainColors.wood.base;
     case 'chest':
-      return GameColors.chest;
+      // Sandık altında çim
+      const chestGrass = getGrassVariant(x, y);
+      return chestGrass === 0
+        ? TerrainColors.grass.base
+        : chestGrass === 1
+        ? TerrainColors.grass.light
+        : chestGrass === 2
+        ? TerrainColors.grass.dark
+        : TerrainColors.grass.highlight;
     case 'unit':
     case 'castle':
-      return ownerColor || GameColors.grid;
+      return ownerColor || TerrainColors.grass.base;
+    case 'empty':
     default:
-      return GameColors.grid;
+      // Çim varyasyonu ile boş hücreler
+      const grassVariant = getGrassVariant(x, y);
+      return grassVariant === 0
+        ? TerrainColors.grass.base
+        : grassVariant === 1
+        ? TerrainColors.grass.light
+        : grassVariant === 2
+        ? TerrainColors.grass.dark
+        : TerrainColors.grass.highlight;
   }
 };
+
+// Su parıltısı animasyonu bileşeni
+// PLACEHOLDER: Gerçek su animasyonu sprite'ı ile değiştirilecek
+const WaterShimmer: React.FC<{ size: number }> = memo(({ size }) => {
+  const shimmerOpacity = useRef(new Animated.Value(0.3)).current;
+  const shimmerTranslate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Parıltı animasyonu
+    const opacityAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.7,
+          duration: 1000 + Math.random() * 500,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.3,
+          duration: 1000 + Math.random() * 500,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    // Dalga hareketi
+    const waveAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerTranslate, {
+          toValue: 3,
+          duration: 1500,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerTranslate, {
+          toValue: -3,
+          duration: 1500,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    opacityAnim.start();
+    waveAnim.start();
+
+    return () => {
+      opacityAnim.stop();
+      waveAnim.stop();
+    };
+  }, [shimmerOpacity, shimmerTranslate]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.waterShimmer,
+        {
+          opacity: shimmerOpacity,
+          transform: [{ translateY: shimmerTranslate }],
+          width: size * 0.6,
+          height: size * 0.15,
+        },
+      ]}
+    />
+  );
+});
+
+// Çim sallanma animasyonu bileşeni
+// PLACEHOLDER: Gerçek çim animasyonu sprite'ı ile değiştirilecek
+const GrassSway: React.FC<{ x: number; y: number; size: number }> = memo(({ x, y, size }) => {
+  const swayRotate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const delay = (x * 100 + y * 50) % 2000;
+
+    const timer = setTimeout(() => {
+      const swayAnim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(swayRotate, {
+            toValue: 1,
+            duration: 2000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(swayRotate, {
+            toValue: -1,
+            duration: 2000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      swayAnim.start();
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [swayRotate, x, y]);
+
+  const rotation = swayRotate.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-3deg', '3deg'],
+  });
+
+  // Her hücrede 2-3 çim yaprağı
+  const grassCount = 2 + (x + y) % 2;
+  const grassBlades: React.ReactNode[] = [];
+
+  for (let i = 0; i < grassCount; i++) {
+    const offsetX = (i * 8 - 4) + (x % 3);
+    const height = 4 + (i % 2) * 2;
+
+    grassBlades.push(
+      <Animated.View
+        key={`grass-${i}`}
+        style={[
+          styles.grassBlade,
+          {
+            left: size * 0.3 + offsetX,
+            height: height,
+            transform: [{ rotate: rotation }],
+          },
+        ]}
+      />
+    );
+  }
+
+  return <View style={styles.grassContainer}>{grassBlades}</View>;
+});
+
+// Köprü tahta dokusu
+// PLACEHOLDER: Gerçek köprü sprite'ı ile değiştirilecek
+const BridgePlanks: React.FC<{ size: number }> = memo(({ size }) => {
+  return (
+    <View style={styles.bridgeContainer}>
+      <View style={[styles.bridgePlank, { width: size * 0.9, top: size * 0.15 }]} />
+      <View style={[styles.bridgePlank, { width: size * 0.9, top: size * 0.4 }]} />
+      <View style={[styles.bridgePlank, { width: size * 0.9, top: size * 0.65 }]} />
+      {/* Köprü yan rayları */}
+      <View style={[styles.bridgeRail, { left: 2 }]} />
+      <View style={[styles.bridgeRail, { right: 2 }]} />
+    </View>
+  );
+});
+
+// Dağ kaya dokusu
+// PLACEHOLDER: Gerçek dağ sprite'ı ile değiştirilecek
+const MountainRocks: React.FC<{ x: number; y: number; size: number }> = memo(({ x, y, size }) => {
+  const variant = (x * 3 + y * 5) % 4;
+
+  return (
+    <View style={styles.mountainContainer}>
+      {/* Ana kaya */}
+      <View
+        style={[
+          styles.rock,
+          {
+            width: size * 0.4,
+            height: size * 0.3,
+            left: variant * 3,
+            top: size * 0.35,
+            backgroundColor: TerrainColors.rock.dark,
+          },
+        ]}
+      />
+      {/* Kar parçası (üstte) */}
+      {variant % 2 === 0 && (
+        <View
+          style={[
+            styles.snowCap,
+            {
+              width: size * 0.25,
+              height: size * 0.15,
+              left: size * 0.2 + variant * 2,
+              top: size * 0.15,
+            },
+          ]}
+        />
+      )}
+    </View>
+  );
+});
 
 const GridCell: React.FC<GridCellProps> = ({
   x,
@@ -69,22 +283,19 @@ const GridCell: React.FC<GridCellProps> = ({
     onPress(x, y);
   }, [x, y, onPress]);
 
-  // Arka plan rengi
-  let backgroundColor = getCellBackgroundColor(type, ownerColor);
+  // Arazi arka plan rengi
+  let backgroundColor = getTerrainBackgroundColor(type, x, y, ownerColor);
 
   // Saldırı durumları için özel arka plan
   if (isTarget) {
-    // Hedef düşman: kırmızı vurgu
     backgroundColor = 'rgba(255, 107, 107, 0.5)';
   } else if (isAttacker) {
-    // Saldıran birim: turuncu vurgu
     backgroundColor = 'rgba(255, 165, 0, 0.5)';
   } else if (isValidPlacement) {
-    // Geçerli yerleştirme hücresi için yeşil arka plan
     backgroundColor = 'rgba(144, 238, 144, 0.4)';
   }
 
-  // Hover ile birleştirilmiş arka plan (kaleler için hover yok, hedef kaleler hariç)
+  // Hover efekti
   let finalBackgroundColor = backgroundColor;
   if ((!isCastle || isTarget) && isHovered) {
     if (isTarget) {
@@ -94,27 +305,53 @@ const GridCell: React.FC<GridCellProps> = ({
     } else if (isValidPlacement) {
       finalBackgroundColor = 'rgba(144, 238, 144, 0.6)';
     } else {
-      finalBackgroundColor = adjustColorBrightness(backgroundColor, 0.8);
+      finalBackgroundColor = adjustColorBrightness(backgroundColor, 0.85);
     }
   }
 
-  // Kale için kalın kenarlık, saldırı/hedef/yerleştirme için özel kenarlıklar
-  const borderWidth = isCastle ? 3 : (isTarget || isAttacker || isValidPlacement) ? 2 : 1;
+  // Görsel Faz V1: İnce kenarlıklar (arazi odaklı görünüm için)
+  // Kale için kalın kenarlık, özel durumlar için orta, normal için çok ince
+  const borderWidth = isCastle
+    ? 3
+    : (isTarget || isAttacker || isValidPlacement)
+    ? 2
+    : 0.5;  // Normal hücreler için çok ince kenarlık
+
   const borderColor = isCastle
     ? '#ffffff'
     : isTarget
-    ? GameColors.attackHighlight  // Kırmızı kenarlık (hedef)
+    ? GameColors.attackHighlight
     : isAttacker
-    ? '#FFA500'  // Turuncu kenarlık (saldıran)
+    ? '#FFA500'
     : isValidPlacement
     ? GameColors.highlight
     : isHighlighted
     ? GameColors.highlight
-    : GameColors.gridBorder;
+    : 'rgba(58, 58, 90, 0.3)';  // Çok açık, yarı şeffaf kenarlık
+
+  // Arazi dokusu katmanları
+  const renderTerrainTexture = () => {
+    switch (type) {
+      case 'river':
+        return <WaterShimmer size={size} />;
+      case 'mountain':
+        return <MountainRocks x={x} y={y} size={size} />;
+      case 'bridge':
+        return <BridgePlanks size={size} />;
+      case 'empty':
+        // Boş hücrelerde çim animasyonu
+        return <GrassSway x={x} y={y} size={size} />;
+      default:
+        return null;
+    }
+  };
 
   // Hücre içeriği
   const cellContent = (
     <>
+      {/* Arazi dokusu */}
+      {renderTerrainTexture()}
+
       {/* Birim göstergesi (X işareti) */}
       {type === 'unit' && (
         <View style={styles.unitMarker}>
@@ -132,18 +369,25 @@ const GridCell: React.FC<GridCellProps> = ({
         </View>
       )}
 
-      {/* Hazine sandığı göstergesi */}
+      {/* Hazine sandığı göstergesi - Görsel Faz V1 geliştirilmiş */}
       {type === 'chest' && (
-        <View style={styles.chestMarker} />
+        <View style={styles.chestContainer}>
+          <View style={styles.chestBody}>
+            {/* Sandık kapağı */}
+            <View style={styles.chestLid} />
+            {/* Sandık kilidi */}
+            <View style={styles.chestLock} />
+          </View>
+          {/* Parıltı efekti */}
+          <ChestSparkle size={size} />
+        </View>
       )}
     </>
   );
 
-  // Kale tıklanabilirliği: hedef olarak işaretlenmiş kaleler tıklanabilir olmalı
-  const isCastleClickable = isCastle && isTarget;
+  // Kale tıklanabilirliği
   const isDisabled = isCastle && !isTarget;
 
-  // Web ve mobil için aynı TouchableOpacity kullan
   return (
     <TouchableOpacity
       onPress={handlePress}
@@ -169,20 +413,72 @@ const GridCell: React.FC<GridCellProps> = ({
   );
 };
 
-// Renk parlaklığını ayarla (hover efekti için)
+// Sandık parıltı animasyonu
+// PLACEHOLDER: Gerçek parıltı sprite'ı ile değiştirilecek
+const ChestSparkle: React.FC<{ size: number }> = memo(({ size }) => {
+  const sparkleOpacity = useRef(new Animated.Value(0)).current;
+  const sparkleScale = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const sparkleAnim = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(sparkleOpacity, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(sparkleScale, {
+            toValue: 1.2,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(sparkleOpacity, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(sparkleScale, {
+            toValue: 0.5,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.delay(1500), // Parıltılar arası bekleme
+      ])
+    );
+    sparkleAnim.start();
+    return () => sparkleAnim.stop();
+  }, [sparkleOpacity, sparkleScale]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.sparkle,
+        {
+          opacity: sparkleOpacity,
+          transform: [{ scale: sparkleScale }],
+        },
+      ]}
+    />
+  );
+});
+
+// Renk parlaklığını ayarla
 function adjustColorBrightness(color: string, factor: number): string {
-  // Hex rengi RGB'ye çevir
+  if (color.startsWith('rgba')) return color;
+
   const hex = color.replace('#', '');
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
 
-  // Parlaklığı ayarla
   const newR = Math.min(255, Math.round(r + (255 - r) * (1 - factor)));
   const newG = Math.min(255, Math.round(g + (255 - g) * (1 - factor)));
   const newB = Math.min(255, Math.round(b + (255 - b) * (1 - factor)));
 
-  // RGB'yi hex'e çevir
   return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 }
 
@@ -190,6 +486,7 @@ const styles = StyleSheet.create({
   cell: {
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
     // @ts-ignore - web style
     cursor: 'pointer',
   },
@@ -198,6 +495,66 @@ const styles = StyleSheet.create({
     borderColor: GameColors.highlight,
     backgroundColor: 'rgba(144, 238, 144, 0.3)',
   },
+  // Arazi dokuları
+  waterShimmer: {
+    position: 'absolute',
+    backgroundColor: TerrainColors.water.shimmer,
+    borderRadius: 10,
+    top: '40%',
+  },
+  grassContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '100%',
+  },
+  grassBlade: {
+    position: 'absolute',
+    bottom: 2,
+    width: 2,
+    backgroundColor: '#2A5C14',
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
+  bridgeContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  bridgePlank: {
+    position: 'absolute',
+    height: 4,
+    backgroundColor: TerrainColors.wood.plank,
+    left: '5%',
+    borderRadius: 1,
+  },
+  bridgeRail: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: TerrainColors.wood.dark,
+  },
+  mountainContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  rock: {
+    position: 'absolute',
+    borderRadius: 4,
+  },
+  snowCap: {
+    position: 'absolute',
+    backgroundColor: TerrainColors.rock.snow,
+    borderRadius: 6,
+  },
+  // Birim göstergeleri
   unitMarker: {
     width: '60%',
     height: '60%',
@@ -234,13 +591,48 @@ const styles = StyleSheet.create({
   castleTowerMiddle: {
     height: '100%',
   },
-  chestMarker: {
-    width: '50%',
-    height: '40%',
+  // Sandık göstergesi - Görsel Faz V1 geliştirilmiş
+  chestContainer: {
+    width: '60%',
+    height: '50%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chestBody: {
+    width: '100%',
+    height: '100%',
     backgroundColor: '#8B4513',
     borderRadius: 4,
     borderWidth: 2,
     borderColor: '#FFD700',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  chestLid: {
+    width: '110%',
+    height: '30%',
+    backgroundColor: '#A0522D',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#6B3510',
+    marginTop: -1,
+  },
+  chestLock: {
+    width: 6,
+    height: 6,
+    backgroundColor: '#FFD700',
+    borderRadius: 3,
+    marginTop: 2,
+  },
+  sparkle: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 8,
+    height: 8,
+    backgroundColor: '#FFD700',
+    borderRadius: 4,
   },
 });
 
