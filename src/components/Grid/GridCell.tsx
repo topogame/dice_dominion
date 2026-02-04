@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Pressable, View, Platform } from 'react-native';
 import { GameColors } from '../../../constants/Colors';
 import { CellType } from '../../types/game.types';
 
@@ -52,6 +52,7 @@ const GridCell: React.FC<GridCellProps> = ({
 }) => {
   // Hücre tıklandığında
   const handlePress = () => {
+    console.log(`Cell pressed: (${x}, ${y})`);
     onPress(x, y);
   };
 
@@ -59,18 +60,17 @@ const GridCell: React.FC<GridCellProps> = ({
   const backgroundColor = getCellBackgroundColor(type, ownerColor);
 
   return (
-    <TouchableOpacity
-      style={[
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [
         styles.cell,
         {
           width: size,
           height: size,
-          backgroundColor,
+          backgroundColor: pressed ? '#5a5a7a' : backgroundColor,
         },
         isHighlighted && styles.highlighted,
       ]}
-      onPress={handlePress}
-      activeOpacity={0.7}
     >
       {/* Birim göstergesi (X işareti) */}
       {type === 'unit' && (
@@ -93,7 +93,7 @@ const GridCell: React.FC<GridCellProps> = ({
       {type === 'chest' && (
         <View style={styles.chestMarker} />
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
@@ -103,6 +103,8 @@ const styles = StyleSheet.create({
     borderColor: GameColors.gridBorder,
     justifyContent: 'center',
     alignItems: 'center',
+    // Web için cursor
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   highlighted: {
     borderWidth: 2,

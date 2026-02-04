@@ -5,7 +5,7 @@
  * Yakınlaştırma (pinch-to-zoom) ve kaydırma (pan) desteği içerir.
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -24,7 +24,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import GridCell from './GridCell';
-import { GridCell as GridCellType, CellType } from '../../types/game.types';
+import { GridCell as GridCellType } from '../../types/game.types';
 import { GameColors, PlayerColors } from '../../../constants/Colors';
 
 // Izgara sabitleri
@@ -131,18 +131,52 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     }
   };
 
+  // Grid render fonksiyonu (ortak)
+  const renderGrid = () => (
+    <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
+      {grid.map((row, y) => (
+        <View key={`row-${y}`} style={styles.row}>
+          {row.map((cell, x) => (
+            <GridCell
+              key={`cell-${x}-${y}`}
+              x={x}
+              y={y}
+              size={cellSize}
+              type={cell.type}
+              ownerId={cell.ownerId}
+              ownerColor={getOwnerColor(cell.ownerId)}
+              isHighlighted={
+                highlightedCell?.x === x && highlightedCell?.y === y
+              }
+              onPress={handleCellPress}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+
+  // Web için basit div tabanlı görünüm
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.webScrollContainer}>
+          {renderGrid()}
+        </View>
+      </View>
+    );
+  }
+
   // Pinch (yakınlaştırma) gesture
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
       savedScale.value = scale.value;
     })
     .onUpdate((event) => {
-      // Ölçeği sınırla (0.5x - 3x)
       const newScale = savedScale.value * event.scale;
       scale.value = Math.min(Math.max(newScale, 0.5), 3);
     })
     .onEnd(() => {
-      // Minimum ölçeğe geri dön (spring animasyonu)
       if (scale.value < 0.8) {
         scale.value = withSpring(0.8);
       }
@@ -159,7 +193,6 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       translateY.value = savedTranslateY.value + event.translationY;
     })
     .onEnd(() => {
-      // Sınırları kontrol et
       const maxTranslateX = (gridTotalWidth * scale.value - screenWidth) / 2;
       const maxTranslateY = (gridTotalHeight * scale.value - screenHeight) / 2;
 
@@ -176,10 +209,8 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
       }
     });
 
-  // Gesture'ları birleştir
   const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
 
-  // Animated stil
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -188,72 +219,12 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     ],
   }));
 
-  // Web için basit ScrollView, mobil için gesture desteği
-  if (Platform.OS === 'web') {
-    return (
-      <View style={styles.container}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={true}
-          contentContainerStyle={styles.scrollContent}
-        >
-          <ScrollView
-            showsVerticalScrollIndicator={true}
-            contentContainerStyle={styles.scrollContent}
-          >
-            <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-              {grid.map((row, y) => (
-                <View key={`row-${y}`} style={styles.row}>
-                  {row.map((cell, x) => (
-                    <GridCell
-                      key={`cell-${x}-${y}`}
-                      x={x}
-                      y={y}
-                      size={cellSize}
-                      type={cell.type}
-                      ownerId={cell.ownerId}
-                      ownerColor={getOwnerColor(cell.ownerId)}
-                      isHighlighted={
-                        highlightedCell?.x === x && highlightedCell?.y === y
-                      }
-                      onPress={handleCellPress}
-                    />
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </ScrollView>
-      </View>
-    );
-  }
-
   // Mobil için gesture destekli görünüm
   return (
     <GestureHandlerRootView style={styles.container}>
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.gridContainer, animatedStyle]}>
-          <View style={[styles.grid, { width: gridTotalWidth, height: gridTotalHeight }]}>
-            {grid.map((row, y) => (
-              <View key={`row-${y}`} style={styles.row}>
-                {row.map((cell, x) => (
-                  <GridCell
-                    key={`cell-${x}-${y}`}
-                    x={x}
-                    y={y}
-                    size={cellSize}
-                    type={cell.type}
-                    ownerId={cell.ownerId}
-                    ownerColor={getOwnerColor(cell.ownerId)}
-                    isHighlighted={
-                      highlightedCell?.x === x && highlightedCell?.y === y
-                    }
-                    onPress={handleCellPress}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
+          {renderGrid()}
         </Animated.View>
       </GestureDetector>
     </GestureHandlerRootView>
@@ -267,10 +238,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  webScrollContainer: {
+    overflow: 'auto',
+    maxWidth: '100%',
+    maxHeight: '100%',
     padding: 10,
   },
   gridContainer: {
