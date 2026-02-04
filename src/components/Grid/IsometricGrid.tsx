@@ -12,9 +12,9 @@
  * - Atmosfer efektleri (gökyüzü, sis, vinyet)
  */
 
-import React, { useMemo, useCallback } from 'react';
-import { StyleSheet, View, Dimensions, TouchableOpacity } from 'react-native';
-import Svg, { Polygon, Rect, Defs, LinearGradient, Stop, RadialGradient } from 'react-native-svg';
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
+import { StyleSheet, View, Dimensions, TouchableOpacity, Animated, Easing } from 'react-native';
+import Svg, { Polygon, Rect, Defs, LinearGradient, Stop, RadialGradient, Ellipse } from 'react-native-svg';
 import {
   gridToIso,
   isoToGrid,
@@ -43,6 +43,67 @@ interface IsometricGridProps {
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ============================================
+// Animasyonlu Bulut Bileşeni (Phase 2 V1-ISO)
+// ============================================
+const AnimatedCloud: React.FC<{
+  delay: number;
+  y: number;
+  size: number;
+  speed: number;
+}> = ({ delay, y, size, speed }) => {
+  const translateX = useRef(new Animated.Value(-size * 2)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = () => {
+      translateX.setValue(-size * 2);
+      opacity.setValue(0);
+
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, {
+            toValue: 0.25,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(translateX, {
+            toValue: SCREEN_WIDTH + size,
+            duration: speed,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => animate());
+    };
+
+    animate();
+  }, [delay, size, speed, translateX, opacity]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.cloud,
+        {
+          top: y,
+          width: size * 2,
+          height: size * 0.6,
+          opacity,
+          transform: [{ translateX }],
+        },
+      ]}
+    >
+      <Svg width={size * 2} height={size * 0.6}>
+        <Ellipse cx={size * 0.4} cy={size * 0.35} rx={size * 0.35} ry={size * 0.2} fill="rgba(255,255,255,0.35)" />
+        <Ellipse cx={size * 0.8} cy={size * 0.25} rx={size * 0.4} ry={size * 0.22} fill="rgba(255,255,255,0.4)" />
+        <Ellipse cx={size * 1.2} cy={size * 0.3} rx={size * 0.35} ry={size * 0.18} fill="rgba(255,255,255,0.3)" />
+        <Ellipse cx={size} cy={size * 0.4} rx={size * 0.5} ry={size * 0.15} fill="rgba(255,255,255,0.25)" />
+      </Svg>
+    </Animated.View>
+  );
+};
 
 // 3D derinlik
 const TILE_DEPTH = 8;
@@ -346,6 +407,11 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#skyGrad)" />
       </Svg>
 
+      {/* Animasyonlu Bulutlar (Phase 2 V1-ISO) */}
+      <AnimatedCloud delay={0} y={40} size={70} speed={30000} />
+      <AnimatedCloud delay={10000} y={90} size={90} speed={35000} />
+      <AnimatedCloud delay={20000} y={60} size={50} speed={25000} />
+
       {/* Izometrik ızgara */}
       <View style={styles.gridWrapper}>
         <View style={[styles.gridContainer, { width: mapDimensions.width + 100, height: mapDimensions.height + 150 }]}>
@@ -372,6 +438,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  cloud: {
+    position: 'absolute',
+    zIndex: 1,
   },
   gridWrapper: {
     flex: 1,
