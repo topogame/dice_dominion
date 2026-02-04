@@ -228,7 +228,7 @@ const createRiverTerrain = (grid: GridCellType[][]): void => {
 const createMountainTerrain = (grid: GridCellType[][]): void => {
   const centerX = Math.floor(GRID_WIDTH / 2);
 
-  // Dağlar: merkez sütunlarında dikey çizgi (3 hücre genişliğinde)
+  // Dağlar: merkez sütunlarında dikey çizgi (4 hücre genişliğinde)
   for (let y = 0; y < GRID_HEIGHT; y++) {
     grid[y][centerX - 2].type = 'mountain';
     grid[y][centerX - 1].type = 'mountain';
@@ -236,18 +236,18 @@ const createMountainTerrain = (grid: GridCellType[][]): void => {
     grid[y][centerX + 1].type = 'mountain';
   }
 
-  // Dar geçitler: 2 hücre genişliğinde koridorlar (üst ve alt bölgede)
-  // Üst geçit (y=2-3, x=centerX-1, centerX)
-  grid[2][centerX - 1].type = 'empty';
-  grid[2][centerX].type = 'empty';
-  grid[3][centerX - 1].type = 'empty';
-  grid[3][centerX].type = 'empty';
+  // Dar geçitler: tam genişlikte geçit (dağ boyunca), üst ve alt bölgede
+  // Üst geçit (y=2-3, tüm dağ hücreleri temizlenir)
+  for (let x = centerX - 2; x <= centerX + 1; x++) {
+    grid[2][x].type = 'empty';
+    grid[3][x].type = 'empty';
+  }
 
-  // Alt geçit (y=8-9, x=centerX-1, centerX)
-  grid[8][centerX - 1].type = 'empty';
-  grid[8][centerX].type = 'empty';
-  grid[9][centerX - 1].type = 'empty';
-  grid[9][centerX].type = 'empty';
+  // Alt geçit (y=8-9, tüm dağ hücreleri temizlenir)
+  for (let x = centerX - 2; x <= centerX + 1; x++) {
+    grid[8][x].type = 'empty';
+    grid[9][x].type = 'empty';
+  }
 };
 
 // Oyuncularla birlikte ızgara oluştur
