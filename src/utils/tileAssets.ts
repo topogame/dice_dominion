@@ -32,27 +32,23 @@ interface GrassCluster {
 }
 
 // Pre-defined cluster centers for natural look
-// grass1 = base grass (larger areas)
-// grass2 = flowery patches (medium clusters)
-// grass3 = mushroom/path areas (smaller scattered clusters)
+// grass3 = base (covers most of the map - mushroom/path style)
+// grass1 = bushy grass clusters scattered around
+// grass2 = flowery patches scattered around
 const grassClusters: GrassCluster[] = [
-  // Large grass1 base areas (covers most of the map)
-  { x: 6, y: 3, type: 0, radius: 8 },
-  { x: 18, y: 9, type: 0, radius: 8 },
-  { x: 12, y: 6, type: 0, radius: 6 },
+  // Medium grass1 bushy clusters scattered around
+  { x: 5, y: 3, type: 0, radius: 4 },
+  { x: 18, y: 8, type: 0, radius: 4 },
+  { x: 11, y: 6, type: 0, radius: 3 },
+  { x: 21, y: 2, type: 0, radius: 3 },
+  { x: 2, y: 9, type: 0, radius: 3 },
 
-  // Medium grass2 flowery patches
-  { x: 3, y: 8, type: 1, radius: 4 },
-  { x: 20, y: 4, type: 1, radius: 4 },
-  { x: 10, y: 2, type: 1, radius: 3 },
-  { x: 15, y: 10, type: 1, radius: 3 },
-
-  // Smaller grass3 mushroom/path clusters
-  { x: 8, y: 10, type: 2, radius: 3 },
-  { x: 22, y: 7, type: 2, radius: 2 },
-  { x: 4, y: 4, type: 2, radius: 2 },
-  { x: 16, y: 3, type: 2, radius: 2 },
-  { x: 1, y: 6, type: 2, radius: 2 },
+  // Medium grass2 flowery patches scattered around
+  { x: 8, y: 2, type: 1, radius: 4 },
+  { x: 15, y: 10, type: 1, radius: 4 },
+  { x: 22, y: 5, type: 1, radius: 3 },
+  { x: 4, y: 6, type: 1, radius: 3 },
+  { x: 14, y: 4, type: 1, radius: 2 },
 ];
 
 // Calculate squared distance (avoid sqrt for performance)
@@ -91,14 +87,14 @@ export const getGrassTileImage = (x: number, y: number): ImageSourcePropType => 
   // If inside a cluster, use that type
   if (bestCluster) {
     switch (bestCluster.type) {
-      case 0: return TileImages.grass1;
-      case 1: return TileImages.grass2;
-      case 2: return TileImages.grass3;
+      case 0: return TileImages.grass1;  // Bushy grass cluster
+      case 1: return TileImages.grass2;  // Flowery grass cluster
+      case 2: return TileImages.grass3;  // (not used as cluster, it's the base)
     }
   }
 
-  // Default: grass1 for tiles not in any cluster
-  return TileImages.grass1;
+  // Default: grass3 is the base terrain for tiles not in any cluster
+  return TileImages.grass3;
 };
 
 // Get tile image based on terrain type (always returns valid image)

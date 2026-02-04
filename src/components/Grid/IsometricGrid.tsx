@@ -413,9 +413,9 @@ const IsometricGrid: React.FC<IsometricGridProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Full-screen grass terrain background */}
+      {/* Full-screen grass terrain background (grass3 is the base) */}
       <Image
-        source={TileImages.grass1}
+        source={TileImages.grass3}
         style={styles.terrainBackground}
         resizeMode="cover"
       />
