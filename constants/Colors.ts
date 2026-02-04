@@ -4,14 +4,44 @@
  * Bu dosya oyunun tüm renk paletini içerir.
  * Oyuncu renkleri, arayüz renkleri ve tema renkleri burada tanımlanır.
  * Görsel Faz V1: Ortaçağ teması için arazi ve arka plan renkleri eklendi.
+ * Görsel Faz V13-ISO: Ortaçağ fantazi teması ana menü renkleri.
  */
+
+// Ortaçağ tema renkleri (V13-ISO)
+export const MedievalTheme = {
+  // Ana renkler
+  gold: '#FFD700',           // Altın - başlıklar, vurgular
+  darkBrown: '#281e14',      // Koyu kahverengi - arka planlar
+  cream: '#E8D5B0',          // Krem - alt yazılar
+  parchment: '#D4C4A8',      // Parşömen - paneller
+
+  // Buton renkleri
+  buttonBg: 'rgba(40, 30, 20, 0.95)',      // Buton arka planı
+  buttonBorder: 'rgba(255, 215, 0, 0.3)',   // Buton kenarlığı
+  buttonBorderHover: 'rgba(255, 215, 0, 0.8)', // Hover kenarlık
+  buttonHighlight: 'rgba(255, 255, 255, 0.1)', // Üst kenar parlaklığı
+  buttonShadow: 'rgba(0, 0, 0, 0.5)',       // Alt kenar gölgesi
+
+  // Gökyüzü gradyanı
+  skyTop: '#1a3a5c',         // Koyu mavi (üst)
+  skyMid: '#4a6a8c',         // Orta mavi
+  skyBottom: '#8aa0b8',      // Açık mavi-gri (ufuk)
+
+  // Atmosfer
+  vignette: 'rgba(0, 0, 0, 0.6)',  // Vinyet gölgesi
+  fog: 'rgba(180, 180, 200, 0.1)', // Atmosferik sis
+
+  // Parçacık renkleri
+  ember: '#FF6B35',          // Kıvılcım
+  dust: 'rgba(255, 220, 180, 0.3)', // Toz parçacıkları
+};
 
 // Ana oyuncu renkleri (kaleler ve birimler için)
 export const PlayerColors = {
-  blue: '#4A90D9',    // Mavi oyuncu
-  red: '#D94A4A',     // Kırmızı oyuncu
-  green: '#4AD97A',   // Yeşil oyuncu
-  yellow: '#D9C74A',  // Sarı oyuncu
+  blue: '#4488FF',    // Mavi oyuncu (daha canlı)
+  red: '#FF4444',     // Kırmızı oyuncu (daha canlı)
+  green: '#44CC44',   // Yeşil oyuncu (daha canlı)
+  yellow: '#FFCC00',  // Sarı oyuncu (daha canlı)
   rebel: '#8B4A8B',   // İsyancı rengi (mor)
 };
 
