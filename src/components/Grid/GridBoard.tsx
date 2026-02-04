@@ -145,23 +145,23 @@ const GridBoard: React.FC<GridBoardProps> = ({ onCellPress }) => {
     </View>
   );
 
-  // Web için ScrollView with centering
+  // Web için basit scrollable container
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        <ScrollView
-          horizontal={true}
-          showsHorizontalScrollIndicator={true}
-          style={styles.horizontalScroll}
-          contentContainerStyle={styles.horizontalScrollContent}
+        <View
+          // @ts-ignore - web style
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
         >
-          <ScrollView
-            showsVerticalScrollIndicator={true}
-            contentContainerStyle={styles.verticalScrollContent}
-          >
-            {renderGridContent()}
-          </ScrollView>
-        </ScrollView>
+          {renderGridContent()}
+        </View>
       </View>
     );
   }

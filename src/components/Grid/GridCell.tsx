@@ -5,40 +5,10 @@
  * Hücre tıklanabilir ve farklı durumları görsel olarak gösterir.
  */
 
-import React, { memo, useCallback } from 'react';
-import { StyleSheet, View, Pressable, Platform } from 'react-native';
+import React, { memo, useCallback, useState } from 'react';
+import { StyleSheet, View, TouchableOpacity, Platform } from 'react-native';
 import { GameColors } from '../../../constants/Colors';
 import { CellType } from '../../types/game.types';
-
-// Web için tıklanabilir wrapper
-const WebClickableWrapper: React.FC<{
-  children: React.ReactNode;
-  onClick: () => void;
-  style: any;
-}> = ({ children, onClick, style }) => {
-  if (Platform.OS !== 'web') {
-    return <>{children}</>;
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.opacity = '0.8';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.opacity = '1';
-      }}
-      style={{
-        ...style,
-        cursor: 'pointer',
-        transition: 'opacity 0.15s ease',
-      }}
-    >
-      {children}
-    </div>
-  );
-};
 
 interface GridCellProps {
   x: number;
@@ -80,13 +50,22 @@ const GridCell: React.FC<GridCellProps> = ({
   isHighlighted,
   onPress,
 }) => {
+  // Hover durumu (web için)
+  const [isHovered, setIsHovered] = useState(false);
+
   // Hücre tıklandığında
   const handlePress = useCallback(() => {
+    console.log(`Cell pressed: ${x}, ${y}`);
     onPress(x, y);
   }, [x, y, onPress]);
 
   // Arka plan rengi
   const backgroundColor = getCellBackgroundColor(type, ownerColor);
+
+  // Hover ile birleştirilmiş arka plan
+  const finalBackgroundColor = isHovered
+    ? adjustColorBrightness(backgroundColor, 0.8)
+    : backgroundColor;
 
   // Hücre içeriği
   const cellContent = (
@@ -115,47 +94,45 @@ const GridCell: React.FC<GridCellProps> = ({
     </>
   );
 
-  // Web için native div kullan
-  if (Platform.OS === 'web') {
-    return (
-      <WebClickableWrapper
-        onClick={handlePress}
-        style={{
-          width: size,
-          height: size,
-          backgroundColor,
-          borderWidth: isHighlighted ? 2 : 1,
-          borderStyle: 'solid',
-          borderColor: isHighlighted ? GameColors.highlight : GameColors.gridBorder,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          boxSizing: 'border-box',
-        }}
-      >
-        {cellContent}
-      </WebClickableWrapper>
-    );
-  }
-
-  // Mobil için Pressable kullan
+  // Web ve mobil için aynı TouchableOpacity kullan
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={handlePress}
+      activeOpacity={0.7}
+      // @ts-ignore - web-specific props
+      onMouseEnter={Platform.OS === 'web' ? () => setIsHovered(true) : undefined}
+      onMouseLeave={Platform.OS === 'web' ? () => setIsHovered(false) : undefined}
       style={[
         styles.cell,
         {
           width: size,
           height: size,
-          backgroundColor,
+          backgroundColor: finalBackgroundColor,
         },
         isHighlighted && styles.highlighted,
       ]}
     >
       {cellContent}
-    </Pressable>
+    </TouchableOpacity>
   );
 };
+
+// Renk parlaklığını ayarla (hover efekti için)
+function adjustColorBrightness(color: string, factor: number): string {
+  // Hex rengi RGB'ye çevir
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Parlaklığı ayarla
+  const newR = Math.min(255, Math.round(r + (255 - r) * (1 - factor)));
+  const newG = Math.min(255, Math.round(g + (255 - g) * (1 - factor)));
+  const newB = Math.min(255, Math.round(b + (255 - b) * (1 - factor)));
+
+  // RGB'yi hex'e çevir
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
 
 const styles = StyleSheet.create({
   cell: {
@@ -163,7 +140,8 @@ const styles = StyleSheet.create({
     borderColor: GameColors.gridBorder,
     justifyContent: 'center',
     alignItems: 'center',
-    cursor: 'pointer' as any,
+    // @ts-ignore - web style
+    cursor: 'pointer',
   },
   highlighted: {
     borderWidth: 2,
