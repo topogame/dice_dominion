@@ -40,7 +40,7 @@ jobs:
         run: npx vitest run
 
       - name: Build with Vite
-        run: npx vite build --base=/dice_dominion/
+        run: npx vite build
 
       - name: Add .nojekyll
         run: touch dist/.nojekyll
