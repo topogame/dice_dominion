@@ -1,0 +1,25 @@
+{
+  "name": "dice-dominion-phaser",
+  "version": "1.0.0",
+  "description": "Dice Dominion - Medieval Strategy Game built with Phaser 3",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "happy-dom": "^20.5.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vitest": "^4.0.18"
+  }
+}
