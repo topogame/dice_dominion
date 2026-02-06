@@ -1,0 +1,85 @@
+# Dice Dominion - GitHub Pages Deployment
+# Bu workflow, main branch'e push yapıldığında otomatik olarak
+# web versiyonunu GitHub Pages'e deploy eder.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web export
+        run: npx expo export --platform web
+
+      - name: Fix asset paths for GitHub Pages
+        run: |
+          echo "Fixing asset paths..."
+
+          # Add .nojekyll to prevent Jekyll processing
+          touch dist/.nojekyll
+
+          # Fix paths in HTML files - add /dice_dominion prefix
+          echo "Fixing HTML paths..."
+          find dist -name "*.html" -type f -exec sed -i 's|"/_expo|"/dice_dominion/_expo|g' {} +
+          find dist -name "*.html" -type f -exec sed -i 's|"/assets|"/dice_dominion/assets|g' {} +
+          find dist -name "*.html" -type f -exec sed -i 's|"/favicon|"/dice_dominion/favicon|g' {} +
+
+          # Fix paths in JS bundles
+          echo "Fixing JS paths..."
+          find dist/_expo -name "*.js" -type f -exec sed -i 's|"/assets/|"/dice_dominion/assets/|g' {} + || true
+
+          # Create game folder for clean URLs
+          mkdir -p dist/game
+          cp dist/game.html dist/game/index.html
+
+          # Copy index.html as 404.html for SPA routing
+          cp dist/index.html dist/404.html
+
+          # List dist contents for debugging
+          echo "Dist contents:"
+          ls -la dist/
+
+          echo "Done!"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        with:
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
