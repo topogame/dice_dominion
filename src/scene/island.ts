@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../theme';
+import type { View } from './view';
 
 /**
  * The shape of the floating island, shared by everything that stands on it
@@ -11,8 +12,6 @@ const HX = 15.4;
 const HZ = 9.4;
 const CORNER = 2.0;
 
-/** Where the river runs off the island, front and back. */
-export const RIVER_END = 7.3;
 /** Overall size of the island, for laying out scenery. */
 export const ISLAND_W = HX * 2;
 export const ISLAND_D = HZ * 2;
@@ -62,31 +61,47 @@ function corner(cx: number, cz: number, from: number, t: number): EdgePoint {
 const PERIMETER = 4 * (HX - CORNER) + 4 * (HZ - CORNER) + 2 * Math.PI * CORNER;
 const EDGE_POINTS = 132;
 
+/** How far the island's long sides bow in between the castles: in front of the board, and behind it. */
+interface Bows {
+  front: number;
+  back: number;
+}
+
+const BOWS: Record<View, Bows> = {
+  // On a wide screen the front bows in a long way, to show its cliff, and the
+  // back hardly at all, to leave room for a wood.
+  landscape: { front: 2.1, back: 0.45 },
+  // On an upright phone the front and back are the right and left of the
+  // screen, and have to match.
+  portrait: { front: 1.2, back: 1.2 },
+};
+
 /** The island's edge at grass level, as a closed loop of points. */
-export const OUTLINE: EdgePoint[] = Array.from({ length: EDGE_POINTS }, (_, i) => {
+function buildOutline(bows: Bows): EdgePoint[] {
+  return Array.from({ length: EDGE_POINTS }, (_, i) => {
   const s = (i / EDGE_POINTS) * PERIMETER;
   const p = roundedRect(s);
   const alongFront = Math.abs(p.nz) > 0.9;
   const alongSide = Math.abs(p.nx) > 0.9;
   // The long sides bow inwards between the castles, the short sides a little.
   let inward = 0;
-  // The front bows in a long way, to show its cliff; the back hardly at all, to leave room for a wood.
-  if (alongFront) inward = (p.nz > 0 ? 2.1 : 0.45) * (1 - smooth(4.5, 10.5, Math.abs(p.x)));
+  if (alongFront) inward = (p.nz > 0 ? bows.front : bows.back) * (1 - smooth(4.5, 10.5, Math.abs(p.x)));
   if (alongSide) inward = 0.95 * (1 - smooth(1.5, 5, Math.abs(p.z)));
   // A ragged edge, except where the river leaves the island.
   const calm = alongFront ? smooth(1.4, 3.2, Math.abs(p.x)) : 1;
   const rough = (0.26 * Math.sin(s * 1.31 + 0.7) + 0.17 * Math.sin(s * 2.9 + 2.0) + 0.1 * Math.sin(s * 6.1 + 4.1)) * calm;
   const out = rough - inward;
   return { x: p.x + p.nx * out, z: p.z + p.nz * out, nx: p.nx, nz: p.nz };
-});
+  });
+}
 
 /** True if the point lies on the island, at least `pad` units from its edge. */
-export function insideIsland(x: number, z: number, pad = 0): boolean {
+function insideOutline(outline: EdgePoint[], x: number, z: number, pad = 0): boolean {
   let inside = false;
   let nearest = Infinity;
-  for (let i = 0, j = OUTLINE.length - 1; i < OUTLINE.length; j = i++) {
-    const a = OUTLINE[i];
-    const b = OUTLINE[j];
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const a = outline[i];
+    const b = outline[j];
     if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
     // Distance from the point to this stretch of the edge.
     const dx = b.x - a.x;
@@ -117,8 +132,8 @@ function clipAtX(points: [number, number][], at: number, keepRight: boolean): [n
  * The lawn on top of the island. With a river, it comes in two pieces with
  * the channel between them. Texture coordinates are in world units.
  */
-export function lawnGeometries(riverHalf: number): THREE.BufferGeometry[] {
-  const loop = OUTLINE.map((p): [number, number] => [p.x, p.z]);
+function lawnGeometries(outline: EdgePoint[], riverHalf: number): THREE.BufferGeometry[] {
+  const loop = outline.map((p): [number, number] => [p.x, p.z]);
   const pieces = riverHalf > 0 ? [clipAtX(loop, -riverHalf, false), clipAtX(loop, riverHalf, true)] : [loop];
   return pieces.map((piece) => {
     const shape = new THREE.Shape(piece.map(([x, z]) => new THREE.Vector2(x, -z)));
@@ -147,11 +162,11 @@ const ROCK_DEEP = new THREE.Color('#3a4670');
  * The body of the island: faceted cliffs under the lawn that draw in to a
  * point far below, which is what makes it read as floating.
  */
-export function rockGeometry(): THREE.BufferGeometry {
+function rockGeometry(outline: EdgePoint[]): THREE.BufferGeometry {
   const rng = mulberry32(977);
-  const n = OUTLINE.length;
+  const n = outline.length;
   const rings = RINGS.map((ring) =>
-    OUTLINE.map((p) => {
+    outline.map((p) => {
       // The lip stays tidy where the waterfall goes over it.
       const calm = Math.abs(p.nz) > 0.9 ? smooth(1.2, 2.6, Math.abs(p.x)) : 1;
       const r = ring.out * calm + (rng() - 0.5) * 2 * ring.wobble;
@@ -198,4 +213,36 @@ export function rockGeometry(): THREE.BufferGeometry {
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
   geometry.computeVertexNormals();
   return geometry;
+}
+
+/** The island as one view sees it. */
+export interface IslandShape {
+  /** Its edge at grass level, as a closed loop of points. */
+  outline: EdgePoint[];
+  /** How far from the middle the river runs off the island at the front, and rises at the back. */
+  riverEnd: number;
+  /** True if the point lies on the island, at least `pad` units from its edge. */
+  inside(x: number, z: number, pad?: number): boolean;
+  lawns(riverHalf: number): THREE.BufferGeometry[];
+  rock(): THREE.BufferGeometry;
+}
+
+const shapes = new Map<View, IslandShape>();
+
+/** The shape of the island for a view; built once and kept. */
+export function islandFor(view: View): IslandShape {
+  let shape = shapes.get(view);
+  if (!shape) {
+    const bows = BOWS[view];
+    const outline = buildOutline(bows);
+    shape = {
+      outline,
+      riverEnd: HZ - bows.front,
+      inside: (x, z, pad = 0) => insideOutline(outline, x, z, pad),
+      lawns: (riverHalf) => lawnGeometries(outline, riverHalf),
+      rock: () => rockGeometry(outline),
+    };
+    shapes.set(view, shape);
+  }
+  return shape;
 }

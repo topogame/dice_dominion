@@ -7,7 +7,7 @@ import { RIVER_HALF } from './Board';
 import { CUSTOM_TREES, TYPICAL_CASTLE, castleSeat } from './customModels';
 import { modelUrl } from './models';
 import { paintedMaterial } from './painted';
-import { ISLAND_D, ISLAND_W, OUTLINE, RIVER_END, insideIsland } from './island';
+import { ISLAND_D, ISLAND_W, islandFor } from './island';
 import { ROCK_SHAPES, rockGeometry, rockMaterial } from './rocks';
 import { TREE_SHAPES, foliageMaterial } from './trees';
 import { COARSE_POINTER, useView, type View } from './view';
@@ -142,6 +142,11 @@ const FLOWERS = ['#ffffff', '#f6d7ff', '#ffe27a', '#ff9fc4', '#c9b6ff'];
  */
 function buildDecor(view: View) {
   const rng = mulberry32(20261116);
+  // The island is shaped differently for each view; everything is laid out on this one.
+  const island = islandFor(view);
+  const OUTLINE = island.outline;
+  const RIVER_END = island.riverEnd;
+  const insideIsland = island.inside;
   const jitter = (amount: number) => (rng() - 0.5) * 2 * amount;
   const pick = <T,>(list: T[]) => list[Math.floor(rng() * list.length)];
 

@@ -3,10 +3,11 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mulberry32 } from '../theme';
 import { RIVER_HALF } from './Board';
-import { RIVER_END } from './island';
+import { islandFor } from './island';
 import { useSceneryModel } from './models';
 import { rockMaterial } from './rocks';
 import { cloudTexture } from './Sky';
+import { useView } from './view';
 
 const NOISE = /* glsl */ `
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -81,7 +82,6 @@ const fallFragment = /* glsl */ `
 const SURFACE = -0.46;
 const BED = -0.98;
 const WIDTH = RIVER_HALF * 2;
-const LENGTH = RIVER_END * 2;
 const FALL_H = 6.2;
 
 const BANK_TOP = new THREE.Color('#7d735f');
@@ -91,9 +91,10 @@ const BANK_WET = new THREE.Color('#33424a');
  * One bank of the channel: a rough stone slope from the edge of the lawn down
  * to the stream bed, faceted like the cliffs.
  */
-function bankGeometry(side: number): THREE.BufferGeometry {
+function bankGeometry(side: number, riverEnd: number): THREE.BufferGeometry {
   const rng = mulberry32(side > 0 ? 311 : 173);
-  const steps = Math.round(LENGTH / 0.55);
+  const length = riverEnd * 2;
+  const steps = Math.round(length / 0.55);
   // Three lines of points run the length of the bank: lawn edge, waterline, bed.
   const lines = [
     { x: RIVER_HALF + 0.05, y: 0.02, wobble: 0 },
@@ -104,7 +105,7 @@ function bankGeometry(side: number): THREE.BufferGeometry {
       new THREE.Vector3(
         side * (line.x + (rng() - 0.5) * 2 * line.wobble),
         line.y + (rng() - 0.5) * line.wobble,
-        -RIVER_END + (i / steps) * LENGTH,
+        -riverEnd + (i / steps) * length,
       ),
     ),
   );
@@ -146,6 +147,10 @@ const LILIES: [number, number, number][] = [
 ];
 
 export function Water() {
+  // The river runs the length of the island, which differs between the two views.
+  const riverEnd = islandFor(useView()).riverEnd;
+  const length = riverEnd * 2;
+
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -161,10 +166,10 @@ export function Water() {
       new THREE.ShaderMaterial({
         vertexShader: vertex,
         fragmentShader: riverFragment,
-        uniforms: { ...uniforms, uSize: { value: new THREE.Vector2(WIDTH, LENGTH) } },
+        uniforms: { ...uniforms, uSize: { value: new THREE.Vector2(WIDTH, length) } },
         transparent: true,
       }),
-    [uniforms],
+    [uniforms, length],
   );
   const fall = useMemo(
     () =>
@@ -178,7 +183,7 @@ export function Water() {
     [uniforms],
   );
 
-  const banks = useMemo(() => [bankGeometry(-1), bankGeometry(1)], []);
+  const banks = useMemo(() => [bankGeometry(-1, riverEnd), bankGeometry(1, riverEnd)], [riverEnd]);
   // The banks are seen from the stream side, whichever way their faces were wound.
   const bankMaterial = useMemo(() => {
     const material = rockMaterial.clone();
@@ -205,14 +210,14 @@ export function Water() {
     <group>
       {/* The channel: a dark bed, stone banks, and the water between them. */}
       <mesh rotation-x={-Math.PI / 2} position={[0, BED, 0]} receiveShadow>
-        <planeGeometry args={[WIDTH - 0.6, LENGTH]} />
+        <planeGeometry args={[WIDTH - 0.6, length]} />
         <meshStandardMaterial color="#123c52" roughness={1} />
       </mesh>
       {banks.map((geometry, i) => (
         <mesh key={i} geometry={geometry} material={bankMaterial} receiveShadow />
       ))}
       <mesh rotation-x={-Math.PI / 2} position={[0, SURFACE, 0]} material={river}>
-        <planeGeometry args={[WIDTH - 0.34, LENGTH]} />
+        <planeGeometry args={[WIDTH - 0.34, length]} />
       </mesh>
 
       {LILIES.map(([x, z, turn], i) => {
@@ -230,12 +235,12 @@ export function Water() {
       })}
 
       {/* The waterfall off the front edge of the island, and the spray it falls into. */}
-      <mesh position={[0, SURFACE - FALL_H / 2, RIVER_END + 0.14]} material={fall}>
+      <mesh position={[0, SURFACE - FALL_H / 2, riverEnd + 0.14]} material={fall}>
         <planeGeometry args={[WIDTH - 0.24, FALL_H]} />
       </mesh>
       <group ref={mist}>
         {[-0.9, 0.5, 1.4].map((x, i) => (
-          <sprite key={i} position={[x, SURFACE - FALL_H + 1.5, RIVER_END + 0.9]} scale={[5.5, 3.4, 1]}>
+          <sprite key={i} position={[x, SURFACE - FALL_H + 1.5, riverEnd + 0.9]} scale={[5.5, 3.4, 1]}>
             <spriteMaterial map={spray} color="#e8f4ff" transparent opacity={0.4} depthWrite={false} fog={false} />
           </sprite>
         ))}

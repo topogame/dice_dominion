@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { useGame } from '../state/game';
 import { COLS, KINGDOMS, ROWS, cellToWorld, mulberry32 } from '../theme';
 import { MAP_TYPE } from '../config';
-import { COARSE_POINTER } from './view';
+import { COARSE_POINTER, useView } from './view';
 import { CUSTOM_CASTLES } from './customModels';
-import { ISLAND_D, ISLAND_W, lawnGeometries, rockGeometry as islandRock } from './island';
+import { ISLAND_D, ISLAND_W, islandFor } from './island';
 import { rockMaterial } from './rocks';
 
 /** Half-width of the river channel, in world units. */
@@ -136,8 +136,9 @@ const GRASS_TILE = 5;
 export function Island() {
   // On the river map the lawn is two pieces with the channel between them.
   const channel = MAP_TYPE === 'river' ? RIVER_HALF : 0;
-  const lawns = useMemo(() => lawnGeometries(channel), [channel]);
-  const rock = useMemo(() => islandRock(), []);
+  const island = islandFor(useView());
+  const lawns = useMemo(() => island.lawns(channel), [island, channel]);
+  const rock = useMemo(() => island.rock(), [island]);
 
   const lawn = useMemo(() => {
     const map = grassTexture();

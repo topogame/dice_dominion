@@ -62,17 +62,10 @@ const UPRIGHT: Subject = {
   ],
   near: 14.7,
   cliff: 0.5,
-  // The island from its wooded edge to its cliff edge, with a sliver of sky each side.
-  across: 16.6,
+  // The island from side to side (island.ts makes the two match on a phone), with a sliver of sky each side.
+  across: 16.8,
   bottom: 0.13,
 };
-/**
- * The island is deeper behind the board, where the wood is, than in front of
- * it, where the cliff is (island.ts: 8.95 tiles against 7.3). On an upright
- * phone those are the left and right of the screen, so the camera aims this
- * far off the middle of the board to keep the island in the middle of the screen.
- */
-const UPRIGHT_ASIDE = (7.3 - 8.95) / 2;
 
 export interface Pose {
   target: THREE.Vector3;
@@ -121,7 +114,7 @@ export function overviewFraming(view: View, aspect: number): Framing {
   const forCliff = (0.5 - s.bottom) * span - low;
   const forTops = Math.max(...highs.map((h) => h.reach - (0.5 - h.clear) * span));
   const away = (forCliff + forTops) / 2 / sin;
-  const target = portrait ? new THREE.Vector3(away, 0, UPRIGHT_ASIDE) : new THREE.Vector3(0, 0, -away);
+  const target = portrait ? new THREE.Vector3(away, 0, 0) : new THREE.Vector3(0, 0, -away);
   return { target, distance, dir, pitch };
 }
 
