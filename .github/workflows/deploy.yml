@@ -1,5 +1,12 @@
 # Dice Dominion - GitHub Pages Deployment
-# Deploys the Vite + Phaser 3 web game to GitHub Pages on push to main.
+#
+# The site is the 3D game, whose source lives on the `web3d` branch. This
+# workflow runs on a push to main (or by hand from the Actions tab), checks
+# that branch out, builds it and publishes it. The Phaser game on main is no
+# longer published; its code stays here.
+#
+# After pushing new work to `web3d`, redeploy by running this workflow by hand
+# or by pushing an empty commit to main.
 
 name: Deploy to GitHub Pages
 
@@ -24,23 +31,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
+      - name: Checkout the 3D game
         uses: actions/checkout@v4
+        with:
+          ref: web3d
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
+      # The lockfile was written on Windows; fall back to a plain install if
+      # npm cannot reconcile its platform-specific packages on Linux.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci || (rm -rf node_modules && npm install)
 
       - name: Run tests
         run: npx vitest run
 
       - name: Build with Vite
-        run: npx vite build
+        run: npx vite build --base=/dice_dominion/ --sourcemap false
 
       - name: Add .nojekyll
         run: touch dist/.nojekyll
