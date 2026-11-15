@@ -20,28 +20,50 @@ export const MIN_DISTANCE = 30;
 export const SPAN = 2 * Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV) / 2);
 
 /**
- * What a view has to show, in tiles. `depth` is measured along the line of
- * sight from the middle of the board: how far the island reaches away from the
- * camera and towards it. `tall` is the height of what stands at the far edge
- * (castles, crags, the waiting die), `cliff` how much of the cliff under the
- * near edge to include, `across` the width to fit on a narrow screen, and
- * `top` and `bottom` the share of the screen's height the HUD bars cover.
+ * What a view has to show, in tiles, measured along the line of sight from
+ * the middle of the board. `near` is how far the island reaches towards the
+ * camera, `cliff` how much of the cliff under that edge to include, `across`
+ * the width to fit on a narrow screen, and `bottom` the share of the screen's
+ * height the bottom HUD covers.
  */
 interface Subject {
-  far: number;
+  /**
+   * The things at the far end that reach highest up the screen: how far beyond
+   * the middle of the board each stands, how tall it is, and the share of the
+   * screen's height that must stay clear above it for the HUD.
+   */
+  tops: { away: number; height: number; clear: number }[];
   near: number;
-  tall: number;
   cliff: number;
   across: number;
-  top: number;
   bottom: number;
 }
 
-const WIDE: Subject = { far: 9.2, near: 8.8, tall: 5.2, cliff: 2.2, across: 33, top: 0.085, bottom: 0.13 };
+const WIDE: Subject = {
+  tops: [
+    // The waiting die, which hangs under the crest in the middle of the top bar.
+    { away: 6.9, height: 5.3, clear: 0.095 },
+    // The crags behind the far castles, under the buttons in the top corners.
+    { away: 8.8, height: 4.0, clear: 0.065 },
+  ],
+  near: 8.8,
+  cliff: 2.2,
+  across: 33,
+  bottom: 0.13,
+};
 // On an upright phone the board runs up the screen. Width is what is scarce
 // there, so only the board itself must fit across; the far castles must still
 // clear the top bar.
-const UPRIGHT: Subject = { far: 14.9, near: 14.7, tall: 4.2, cliff: 0.5, across: ROWS + 2.6, top: 0.09, bottom: 0.13 };
+const UPRIGHT: Subject = {
+  tops: [
+    { away: 13, height: 4.9, clear: 0.065 },
+    { away: 14.6, height: 3.6, clear: 0.065 },
+  ],
+  near: 14.7,
+  cliff: 0.5,
+  across: ROWS + 2.6,
+  bottom: 0.13,
+};
 
 export interface Pose {
   target: THREE.Vector3;
@@ -75,15 +97,21 @@ export function overviewFraming(view: View, aspect: number): Framing {
   const s = portrait ? UPRIGHT : WIDE;
   const sin = Math.sin(pitch);
   const cos = Math.cos(pitch);
-  const tall = (s.far + s.near) * sin + (s.tall + s.cliff) * cos;
-  const span = Math.max(tall / (1 - s.top - s.bottom), s.across / aspect);
+  // How far the island reaches down the screen from the middle of the board,
+  // and how far each tall thing at the far end reaches up it.
+  const low = s.near * sin + s.cliff * cos;
+  const highs = s.tops.map((t) => ({ reach: t.away * sin + t.height * cos, clear: t.clear }));
+  const span = Math.max(...highs.map((h) => (h.reach + low) / (1 - h.clear - s.bottom)), s.across / aspect);
   const distance = THREE.MathUtils.clamp(span / SPAN, 20, MAX_DISTANCE);
 
-  // Aim at the point on the ground that puts the middle of all that in the
-  // middle of the clear part of the screen, which lies a little above centre.
+  // Where to aim. Aiming further away slides everything down the screen. The
+  // aim point may lie anywhere between the place that brings the near cliff
+  // down to the bottom bar and the place that brings the tallest thing up to
+  // its limit; on a screen with room to spare, take the middle of the two.
   // `away` is how far that point lies beyond the middle of the board.
-  const middle = ((s.bottom - s.top) / 2) * span;
-  const away = (s.far - s.near) / 2 - (middle - ((s.tall - s.cliff) / 2) * cos) / sin;
+  const forCliff = (0.5 - s.bottom) * span - low;
+  const forTops = Math.max(...highs.map((h) => h.reach - (0.5 - h.clear) * span));
+  const away = (forCliff + forTops) / 2 / sin;
   const target = portrait ? new THREE.Vector3(away, 0, 0) : new THREE.Vector3(0, 0, -away);
   return { target, distance, dir, pitch };
 }
