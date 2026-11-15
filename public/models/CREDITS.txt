@@ -1,0 +1,7 @@
+3D models in this folder are from the KayKit asset packs by Kay Lousberg
+(www.kaylousberg.com), released under Creative Commons Zero (CC0):
+
+- KayKit : Medieval Hexagon Pack 1.0   (castles, trees, rocks, mountains, props)
+- KayKit : Adventurers Character Pack 1.0   (knight.glb, trimmed by scripts/prepare-models.mjs)
+
+Source: https://github.com/KayKit-Game-Assets

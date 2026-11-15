@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Working pictures: the concept image, crops sent to the model generator, comparisons
+reference/
