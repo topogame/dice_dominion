@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { ROWS } from '../theme';
 import type { View } from './view';
 
 /** Camera pitch above the horizon, the classic top-down strategy angle. */
@@ -56,14 +55,24 @@ const WIDE: Subject = {
 // clear the top bar.
 const UPRIGHT: Subject = {
   tops: [
-    { away: 13, height: 4.9, clear: 0.065 },
-    { away: 14.6, height: 3.6, clear: 0.065 },
+    // The two far castles with their hit-point gems, and the die between them.
+    // The crags behind them may run up under the top bar: they are only rock.
+    { away: 12.2, height: 3.4, clear: 0.065 },
+    { away: 12.4, height: 3.2, clear: 0.065 },
   ],
   near: 14.7,
   cliff: 0.5,
-  across: ROWS + 2.6,
+  // The island from its wooded edge to its cliff edge, with a sliver of sky each side.
+  across: 16.6,
   bottom: 0.13,
 };
+/**
+ * The island is deeper behind the board, where the wood is, than in front of
+ * it, where the cliff is (island.ts: 8.95 tiles against 7.3). On an upright
+ * phone those are the left and right of the screen, so the camera aims this
+ * far off the middle of the board to keep the island in the middle of the screen.
+ */
+const UPRIGHT_ASIDE = (7.3 - 8.95) / 2;
 
 export interface Pose {
   target: THREE.Vector3;
@@ -112,7 +121,7 @@ export function overviewFraming(view: View, aspect: number): Framing {
   const forCliff = (0.5 - s.bottom) * span - low;
   const forTops = Math.max(...highs.map((h) => h.reach - (0.5 - h.clear) * span));
   const away = (forCliff + forTops) / 2 / sin;
-  const target = portrait ? new THREE.Vector3(away, 0, 0) : new THREE.Vector3(0, 0, -away);
+  const target = portrait ? new THREE.Vector3(away, 0, UPRIGHT_ASIDE) : new THREE.Vector3(0, 0, -away);
   return { target, distance, dir, pitch };
 }
 

@@ -17,8 +17,14 @@ const HOVER_SIZE = 2.15;
  * camera sees it, so it hangs over the trees and hides no tile worth tapping.
  */
 function hoverSpot(view: View): [number, number] {
-  return view === 'portrait' ? [COLS / 2 + 1, 0] : [0, -ROWS / 2 - 0.9];
+  return view === 'portrait' ? [COLS / 2 + 0.4, 0] : [0, -ROWS / 2 - 0.9];
 }
+
+/**
+ * How high it waits. Lower on an upright phone, where it hangs between the
+ * two far castles rather than above them, so it needs no sky of its own.
+ */
+const hoverHeight = (view: View) => (view === 'portrait' ? 2.3 : HOVER_HEIGHT);
 
 // Landing times of the three bounces and the moment of rest, as fractions of a throw.
 const T1 = 0.33;
@@ -165,6 +171,8 @@ function DieActor({ id }: { id: DieId }) {
   const view = useView();
   const hover = useRef<[number, number]>([0, 0]);
   hover.current = hoverSpot(view);
+  const lift = useRef(HOVER_HEIGHT);
+  lift.current = hoverHeight(view);
 
   const materials = useMemo(
     () =>
@@ -247,7 +255,7 @@ function DieActor({ id }: { id: DieId }) {
     let h: number;
     if (k < T1) {
       const u = k / T1;
-      h = (main ? HOVER_HEIGHT / d.size : 4.5) * (1 - u * u);
+      h = (main ? lift.current / d.size : 4.5) * (1 - u * u);
     } else if (k < T2) {
       const u = (k - T1) / (T2 - T1);
       h = 1.5 * 4 * u * (1 - u);
@@ -345,7 +353,7 @@ function WaitingDie() {
     group.current.visible = k > 0.01;
     if (!group.current.visible) return;
 
-    group.current.position.set(x, HOVER_HEIGHT + Math.sin(t * 1.3) * 0.12, z);
+    group.current.position.set(x, hoverHeight(view) + Math.sin(t * 1.3) * 0.12, z);
     group.current.scale.setScalar(k * fit);
     die.current.rotation.set(0.62 + Math.sin(t * 0.5) * 0.08, t * 0.45, 0.5);
     rings.current.children.forEach((ring, i) => {
